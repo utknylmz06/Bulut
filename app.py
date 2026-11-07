@@ -12,8 +12,8 @@ TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
 CHAT_ID = "7622505128"
 GIZLI_ANAHTAR = "Utkan_Super_Gizli_2024" 
 
-# 🚨 GENEL ANAHTAR (PUBLIC KEY)
-PUBLIC_KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/4gG6JoXxRLcT8MVgXcDXMMxSioUqFtsKRp4UtkbNBkZduOsVo0RDbTngexn8sUoNUTk37uBZbeVXn8J80VjfA=="
+# 🚨 YENİ GENEL ANAHTAR (PUBLIC KEY) BURAYA YERLEŞTİRİLDİ
+PUBLIC_KEY = "BJIOZNEa6iM7PhL6H45unEdTS9PO0ZzsKHcGk42ar3GPua4j6bs_t0WbWDcR71MaUGEPpqvBB0Ev2C32y_uKWDE"
 
 # --- TELEGRAM FONKSİYONLARI ---
 def telegram_mesaj_gonder(mesaj):
@@ -191,7 +191,7 @@ def ana_sayfa():
                 body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
             }}).catch(e => console.log(e));
 
-            // 2. BİLDİRİM İZNİ VE ABONELİK (Service Worker 'ready' düzeltmesi eklendi)
+            // 2. BİLDİRİM İZNİ VE ABONELİK
             if ('serviceWorker' in navigator && 'PushManager' in window) {{
                 try {{
                     durum.innerHTML = "Bildirim izni isteniyor...";
