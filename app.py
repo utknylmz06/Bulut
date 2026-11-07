@@ -7,16 +7,16 @@ app = Flask(__name__)
 
 # --- AYARLAR ---
 TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
-CHAT_ID = "7622505128" # Sadece senin ID'n. Başkası mesaj alamaz.
+CHAT_ID = "7622505128" # Senin özel ID'n
 
-# 🚨 GİZLİ ŞİFRE (Bunu kendine göre değiştir!)
-GIZLI_SIFRE = "utkan_ozel_sifre_123" 
+# 🚨 BOTUN SORACAĞI ŞİFRE (Bunu istediğin gibi değiştir!)
+BOT_SIFRESI = "utkan123" 
 
 # --- TELEGRAM FONKSİYONLARI ---
-def telegram_mesaj_gonder(mesaj):
+def telegram_mesaj_gonder(mesaj, gonderilecek_chat_id=CHAT_ID):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "HTML"}, timeout=5)
+        requests.post(url, json={"chat_id": gonderilecek_chat_id, "text": mesaj, "parse_mode": "HTML"}, timeout=5)
     except Exception as e:
         print("Mesaj Hatası:", e)
 
@@ -43,15 +43,37 @@ def telegram_video_gonder(video_dosyasi):
     except Exception as e:
         print("Video Gönderme Hatası:", e)
 
+# --- TELEGRAM BOT MESAJ DİNLEYİCİ (WEBHOOK) ---
+@app.route('/webhook', methods=['POST'])
+def telegram_webhook():
+    update = request.get_json()
+    
+    if "message" in update:
+        chat_id = update["message"]["chat"]["id"]
+        text = update["message"].get("text", "")
+        
+        # Eğer mesaj atan sen değilsen, botu hiç meşgul etme.
+        if str(chat_id) != CHAT_ID:
+            return "OK", 200
+            
+        # Eğer sana /start yazıldıysa
+        if text == "/start":
+            telegram_mesaj_gonder("🚨 <b>GÜVENLİK DUVARI</b> 🚨\n\nEfendim, sisteme erişmek için lütfen şifrenizi girin:")
+        
+        # Eğer doğru şifre girildiyse
+        elif text == BOT_SIFRESI:
+            telegram_mesaj_gonder("✅ <b>GİRİŞ BAŞARILI!</b> Sistem aktif. Hoş geldin Utkan.")
+            
+        # Eğer yanlış bir şifre girildiyse
+        elif text != "/start":
+            telegram_mesaj_gonder("❌ Hatalı şifre! Erişim reddedildi.")
+            
+    return "OK", 200
+
 # --- WEB ROTALARI ---
 @app.route('/', methods=['GET'])
 def ana_sayfa():
     if request.path == '/favicon.ico': return "OK", 200
-    
-    # 🚨 GÜVENLİK KONTROLÜ: Linkte şifre var mı?
-    gelen_sifre = request.args.get('sifre')
-    if gelen_sifre != GIZLI_SIFRE:
-        return "<h1>Erişim Reddedildi</h1><p>Bu siteyi görüntüleme yetkiniz yok. Utkan'ın izni gerekiyor.</p>", 403
     
     ziyaretci_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
     if ziyaretci_ip: ziyaretci_ip = ziyaretci_ip.split(',')[0].strip()
