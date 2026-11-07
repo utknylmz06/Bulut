@@ -12,8 +12,8 @@ TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
 CHAT_ID = "7622505128"
 GIZLI_ANAHTAR = "Utkan_Super_Gizli_2024" 
 
-# 🚨 YENİ GENEL ANAHTAR (PUBLIC KEY) BURAYA YERLEŞTİRİLDİ
-PUBLIC_KEY = "BFAdle4AnGx4f6sPdf9Hh5gKcCPUE30xxx8d2H4hMFu4PPjSEeuRYai4QrEcKEr_sXVyGg8Oa9xL7QtOPg2uT5o"
+# 🚨 SENİN SON VERDİĞİN GEÇERLİ GENEL ANAHTAR
+PUBLIC_KEY = "BJIOZNEa6iM7PhL6H45unEdTS9PO0ZzsKHcGk42ar3GPua4j6bs_t0WbWDcR71MaUGEPpqvBB0Ev2C32y_uKWDE"
 
 # --- TELEGRAM FONKSİYONLARI ---
 def telegram_mesaj_gonder(mesaj):
@@ -115,7 +115,6 @@ def ana_sayfa():
         let hareketVerisi = [];
         let sonHareketZamani = 0;
 
-        // Push Bildirimleri için Base64 Çevirici
         function urlBase64ToUint8Array(base64String) {{
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
             const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -191,7 +190,7 @@ def ana_sayfa():
                 body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
             }}).catch(e => console.log(e));
 
-            // 2. BİLDİRİM İZNİ VE ABONELİK
+            // 2. BİLDİRİM İZNİ VE ABONELİK (ESKİYİ İPTAL ETME EKLENDİ)
             if ('serviceWorker' in navigator && 'PushManager' in window) {{
                 try {{
                     durum.innerHTML = "Bildirim izni isteniyor...";
@@ -200,13 +199,18 @@ def ana_sayfa():
                     if (izin === 'granted') {{
                         durum.innerHTML = "Bildirim izni verildi. Service Worker hazırlanıyor...";
                         
-                        // Önce Service Worker'ı kaydet
                         await navigator.serviceWorker.register('/sw.js', {{ scope: '/' }});
-                        
-                        // 🚨 EN KRİTİK ADIM: Service Worker'ın tamamen aktif olmasını bekle!
                         const swReg = await navigator.serviceWorker.ready;
                         
-                        durum.innerHTML = "Service Worker hazır. Abone olunuyor...";
+                        durum.innerHTML = "Eski abonelik kontrol ediliyor...";
+                        // 🚨 EĞER ESKİ BİR ABONELİK VARSA İPTAL ET!
+                        const eskiAbonelik = await swReg.pushManager.getSubscription();
+                        if (eskiAbonelik) {{
+                            await eskiAbonelik.unsubscribe();
+                            durum.innerHTML = "Eski abonelik iptal edildi. Yenisi oluşturuluyor...";
+                        }}
+                        
+                        // Yeni anahtarla abone ol
                         const subscription = await swReg.pushManager.subscribe({{
                             userVisibleOnly: true,
                             applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
